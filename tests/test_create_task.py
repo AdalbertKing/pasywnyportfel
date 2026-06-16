@@ -39,6 +39,12 @@ def template_root_with_libraries(template_root: Path, project_root: Path) -> Pat
     hist = libs_src / "HIST_LIBRARY_DAILY.csv"
     if hist.exists():
         shutil.copy2(hist, libs_dst / "HIST_LIBRARY_DAILY.csv")
+    else:
+        # Na CI plik jest w .gitignore — tworzymy minimalny placeholder
+        # z tickerami uzywanymi przez szablon comparison_2005 (SPY, IEF)
+        (libs_dst / "HIST_LIBRARY_DAILY.csv").write_text(
+            "DATE,SPY,IEF\n2020-01-01,100,100\n", encoding="utf-8"
+        )
     return template_root
 
 
