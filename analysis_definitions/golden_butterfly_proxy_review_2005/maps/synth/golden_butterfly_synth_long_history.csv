@@ -1,0 +1,6 @@
+Ticker,ISIN,ASSET,CCY,WEIGHT,COST,LIB_COL,NAME,ROLE,NOTE
+SYNTH_US_STOCKS,SYNTH_US_STOCKS,SHARES,USD,20,0,US_STOCKS_TR,Synthetic US Stocks TR,Duże spółki / szeroki rynek USA,Długa historia syntetyczna
+SYNTH_US_SMALL_VALUE,SYNTH_US_SMALL_VALUE,SHARES,USD,20,0,US_SMALL_VALUE_TR,Synthetic US Small Value TR,Małe spółki value USA,Główny klocek powodujący rozjazd ETF vs synthetic
+SYNTH_US_10Y_BONDS,SYNTH_US_10Y_BONDS,BOND,USD,20,0,US_10Y_BONDS_TR,Synthetic US 10Y Treasury Bonds TR,10-letnie obligacje skarbowe USA,Odpowiednik klocka SXRM/IE00B3VWN518
+SYNTH_US_LT_BONDS,SYNTH_US_LT_BONDS,BOND,USD,20,0,US_LT_BONDS_TR,Synthetic US Long Treasury Bonds TR,30-letnie / długie obligacje skarbowe USA,Odpowiednik klocka DTLA/TLT/long bonds
+SYNTH_GOLD,SYNTH_GOLD,RAW,USD,20,0,GOLD_USD,Synthetic Gold USD,Złoto,Długa historia złota w USD

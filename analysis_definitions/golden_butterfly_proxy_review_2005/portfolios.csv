@@ -1,0 +1,3 @@
+﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,INCLUDE
+bfly_classic,Golden Butterfly classic proxy,maps\synth\golden_butterfly_synth_long_history.csv,maps\hist\golden_butterfly_hist_classic_proxy.csv,DRIFT,20,1
+bfly_fit,Golden Butterfly fit proxy,maps\synth\golden_butterfly_synth_long_history.csv,maps\hist\golden_butterfly_hist_fit_proxy.csv,DRIFT,20,1

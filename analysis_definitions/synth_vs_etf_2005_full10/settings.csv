@@ -1,0 +1,24 @@
+﻿KEY,VALUE
+analysis_id,synth_vs_etf_2005_full10
+start,2005-01-31
+end,2026-03-31
+dbstart_synth,2005-01-01
+dbstart_hist,2005-01-31
+saldo,100000
+freq,monthly
+tax_mode,gross
+tax_base,PLN
+tax_rate,0.19
+tax_note,gross=bez podatku; net+PLN=polska Belka 19% z FX
+synth_library,data\in\libraries\SYNTH_LIBRARY_MONTHLY_USD.csv
+hist_library,data\in\libraries\HIST_LIBRARY_DAILY.csv
+fx,data\in\fx\DB_FX.csv
+cpi_us,data\in\cpi\CPI_USD.csv
+cpi_pl,data\in\cpi\CPI_PLN_GUS.csv
+windows,"3,5,7,10"
+focus,
+value_col_usd,TOTAL_USD_POST_REAL
+value_col_pln,TOTAL_PLN_POST_REAL
+make_plots,1
+make_summary_png,1
+make_crash,1

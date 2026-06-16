@@ -1,0 +1,6 @@
+﻿Ticker,YFTicker,ISIN,ASSET,CCY,WEIGHT,COST,NAME,ROLE,NOTE
+SPY,SPY,US78462F1030,SHARES,USD,20,0,SPDR S&P 500 ETF Trust,USA large cap,Historical proxy for SXR4/CSPX large-cap leg
+IJS,IJS,US4642878791,SHARES,USD,20,0,iShares S&P Small-Cap 600 Value ETF,USA small value,Historical proxy for ZPRV/USSC small-value leg
+SHY,SHY,US4642874576,BOND,USD,20,0,iShares 1-3 Year Treasury Bond ETF,USA Treasury 1-3Y,Historical proxy for VUDS Acc USD production leg
+TLT,TLT,US4642874329,BOND,USD,20,0,iShares 20+ Year Treasury Bond ETF,USA Treasury 20+Y,Historical proxy for DTLA long Treasury leg
+GLD,GLD,US78463V1070,RAW,USD,20,0,SPDR Gold Shares,Gold,Historical proxy for SGLN gold leg

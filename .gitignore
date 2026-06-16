@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Wyniki analiz (generowane przez run_task.cmd)
+analysis_results/
+
+# Raporty (generowane przez analysis.py)
+reports/
+
+# Srodowisko runtime (generowane przez 1-start_setup.cmd)
+runtime/
+_python_cmd.txt
+
+# Notowania HIST (generowane przez refresh_quotes.cmd)
+data/in/libraries/HIST_LIBRARY_DAILY.csv
+data/in/libraries/HIST_LIBRARY_DAILY_manifest.csv
+
+# Dokumentacja generowana automatycznie
+docs/generated/
+
+# Pliki tymczasowe Windows
+*.tmp
+Thumbs.db
+Desktop.ini

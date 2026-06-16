@@ -1,0 +1,30 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    env:
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout kodu
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Instalacja zaleznosci
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Testy jednostkowe (pytest)
+        run: pytest -v
+
+      - name: Kompilacja i walidacja taskow (stage1)
+        run: python app/bin/stage1_quick_check.py

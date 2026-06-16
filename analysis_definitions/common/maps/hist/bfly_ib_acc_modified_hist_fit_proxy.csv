@@ -1,0 +1,6 @@
+﻿Ticker,YFTicker,ISIN,ASSET,CCY,WEIGHT,COST,NAME,ROLE,NOTE
+VTI,VTI,US9229087690,SHARES,USD,20,0,Vanguard Total Stock Market ETF,USA broad equity,Fit proxy for broad USA equity leg
+VBR,VBR,US9229086114,SHARES,USD,20,0,Vanguard Small-Cap Value ETF,USA small value,Fit proxy for small-value leg
+SHY,SHY,US4642874576,BOND,USD,20,0,iShares 1-3 Year Treasury Bond ETF,USA Treasury 1-3Y,Historical proxy for VUDS Acc USD production leg
+TLT,TLT,US4642874329,BOND,USD,20,0,iShares 20+ Year Treasury Bond ETF,USA Treasury 20+Y,Fit proxy for DTLA long Treasury leg
+IAU,IAU,US4642851053,RAW,USD,20,0,iShares Gold Trust,Gold,Fit proxy for gold leg

@@ -1,0 +1,27 @@
+pasywnyportfel ver. 2.1.5 release validation
+
+Compiled Python files: 22
+Checks: {"stage1_quick_check": 0, "stage1_clean_audit": 0, "release_root_audit": 0, "validate_daily": 0, "validate_user": 0}
+Root files:
+1-start_setup.cmd
+ABOUT.txt
+INSTRUKCJA_START.txt
+README.md
+SOURCES.md
+VERSION.txt
+check_common_data.cmd
+check_project.cmd
+check_stage1.cmd
+check_stage1_clean.cmd
+check_task.cmd
+create_task.cmd
+refresh_data.cmd
+requirements.txt
+run_task.cmd
+
+Root dirs:
+analysis_definitions
+app
+data
+docs
+runtime

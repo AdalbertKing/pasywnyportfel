@@ -1,0 +1,25 @@
+﻿KEY,VALUE
+analysis_id,benchmark_1970_synth_usd_gross
+start,1970-01-31
+end,2026-03-31
+dbstart_synth,1970-01-01
+saldo,100000
+freq,monthly
+tax_mode,gross
+tax_base,USD
+tax_rate,0.19
+tax_note,"gross=bez podatku; net+USD=pogladowy podatek liczony w USD, nie polska Belka"
+analysis_mode,synth_only
+synth_library,data\in\libraries\SYNTH_LIBRARY_MONTHLY_USD.csv
+hist_library,data\in\libraries\HIST_LIBRARY_DAILY.csv
+fx,
+cpi_us,data\in\cpi\CPI_USD.csv
+cpi_pl,
+windows,"3,5,7,10,15,20"
+focus,bfly_syn
+value_col_usd,TOTAL_USD_POST_REAL
+value_col_pln,
+plot_currencies,USD
+make_plots,1
+make_summary_png,1
+make_crash,1

@@ -1,0 +1,10 @@
+# pasywnyportfel — zaleznosci deweloperskie (testy)
+#
+# Instalacja:
+#   pip install -r requirements.txt
+#   pip install -r requirements-dev.txt
+#
+# Uruchomienie testow:
+#   pytest
+
+pytest>=8.0

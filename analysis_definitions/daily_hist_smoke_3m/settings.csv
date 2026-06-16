@@ -1,0 +1,26 @@
+﻿KEY,VALUE
+analysis_id,daily_hist_smoke_3m
+start,AUTO-3M
+end,AUTO
+lookback_months,3
+start_tolerance_days,7
+saldo,100000
+freq,daily
+analysis_mode,hist_only
+tax_mode,gross
+tax_base,PLN
+tax_rate,0.19
+tax_note,gross=bez podatku; szybki test dzienny HIST odświeżania danych
+synth_library,
+hist_library,data\in\libraries\HIST_LIBRARY_DAILY.csv
+fx,data\in\fx\DB_FX.csv
+cpi_us,data\in\cpi\CPI_USD.csv
+cpi_pl,data\in\cpi\CPI_PLN_GUS.csv
+windows,"3,5,7,10"
+focus,
+value_col_usd,TOTAL_USD_POST_REAL
+value_col_pln,TOTAL_PLN_POST_REAL
+plot_currencies,USD,PLN
+make_plots,1
+make_summary_png,1
+make_crash,0

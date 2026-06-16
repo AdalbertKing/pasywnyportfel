@@ -1,0 +1,21 @@
+pasywnyportfel ver. 2.2.3 PRE-GUI
+
+Autor koncepcji i projektu:
+Wojciech Król
+email: lurk@lurk.com.pl
+
+Charakter:
+Wsadowe narzędzie do analizy portfeli pasywnych.
+Nie stanowi rekomendacji inwestycyjnej.
+
+Wersja 2.2.3:
+- naprawia release_root_audit po wykonaniu analiz,
+- analysis_results i reports są dozwolone jako katalogi robocze,
+- zachowuje 2.1.5 CLEAN_ROOT jako punkt wycofania.
+
+2.2.5: run_task.cmd sprawdza HIST_LIBRARY_DAILY.csv i automatycznie odpala refresh_quotes.py dla taska, gdy biblioteka jest pusta albo za krotka.
+
+2.2.5A:
+- poprawka zakresu HIST: taski 2005 nie wymagają już ETF-ów od 2000 r.; dbstart_hist ustawiony na faktyczny start analizy 2005-01-31.
+- refresh_quotes.py sprawdza pokrycie względem startu analizy, nie technicznego bufora.
+- build_db_freq.py nie wymaga importu yfinance przy pracy wyłącznie z lokalną biblioteką HIST.

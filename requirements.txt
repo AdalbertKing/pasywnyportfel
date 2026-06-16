@@ -1,0 +1,11 @@
+# pasywnyportfel — zależności produkcyjne
+# Luźne piny: minimalne wersje gwarantujące działanie projektu.
+# Do instalacji deweloperskiej / CI: pip install -r requirements.txt
+# Do reprodukowalnego środowiska:    pip install -r requirements-lock.txt
+
+pandas>=2.2,<4
+numpy>=1.26
+matplotlib>=3.7
+yfinance>=0.2.50
+requests>=2.28
+python-dateutil>=2.9

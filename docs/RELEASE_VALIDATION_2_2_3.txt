@@ -1,0 +1,5 @@
+pasywnyportfel ver. 2.2.3 release validation
+
+Compiled Python files: 23
+Checks: {"stage1_quick_check": 0, "stage1_clean_audit": 0, "release_root_audit_with_runtime_dirs": 0, "validate_daily": 0, "validate_bfly": 0, "release_root_audit_clean_release": 0}
+Audit passes with analysis_results/reports runtime directories and with clean release root.

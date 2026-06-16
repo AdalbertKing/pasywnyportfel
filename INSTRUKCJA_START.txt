@@ -1,0 +1,133 @@
+pasywnyportfel ver. 2.2.5A
+Autor: Wojciech Król, lurk@lurk.com.pl
+
+====================================================================
+  PIERWSZE URUCHOMIENIE
+====================================================================
+
+1. Rozpakuj ZIP do zwykłego folderu, np.:
+   D:\analises\pasywnyportfel
+
+2. Wejdź do katalogu:
+   cd /d D:\analises\pasywnyportfel
+
+3. Pełny start (instalacja, CPI/FX, notowania HIST, domyślne analizy):
+   1-start_setup.cmd
+
+4. Sprawdź stan pakietu:
+   test_after_start.cmd
+
+   Oczekiwany wynik: FAIL: 0. WARN-y o brakujących notowaniach HIST
+   są normalne — rozwiązujesz je przez refresh_quotes.cmd <task>.
+
+====================================================================
+  CODZIENNA PRACA
+====================================================================
+
+Pięć komend, które potrzebujesz:
+
+   run_task.cmd <task>              uruchom analizę
+   create_task.cmd <nowy_task>      stwórz nowy task z szablonu
+   refresh_data.cmd                 odśwież CPI/FX
+   refresh_quotes.cmd <task>        odśwież notowania ETF
+   test_after_start.cmd             kontrola stanu pakietu
+
+Typowa sesja:
+
+   refresh_data.cmd
+   refresh_quotes.cmd user_template
+   run_task.cmd user_template
+
+====================================================================
+  TWORZENIE WŁASNEJ ANALIZY
+====================================================================
+
+1. Stwórz task:
+   create_task.cmd moja_analiza
+
+   Skrypt automatycznie waliduje konfigurację. Jeśli widzi problemy
+   (brak HIST, złe daty) — powie Ci co poprawić.
+
+2. Edytuj pliki:
+   analysis_definitions\moja_analiza\settings.csv
+   analysis_definitions\moja_analiza\portfolios.csv
+   analysis_definitions\moja_analiza\maps\synth\...
+   analysis_definitions\moja_analiza\maps\hist\...
+
+3. Sprawdź konfigurację:
+   check_task.cmd moja_analiza
+
+4. Odśwież notowania i uruchom:
+   refresh_quotes.cmd moja_analiza
+   run_task.cmd moja_analiza
+
+====================================================================
+  PODATEK BELKI
+====================================================================
+
+W settings.csv dodaj trzy linie:
+
+   tax_mode,net
+   tax_base,PLN
+   tax_rate,0.19
+
+Wymaga fx (jest domyślnie: data\in\fx\DB_FX.csv).
+Wynik: pliki summary_net_PLN_*.csv z wartościami po podatku.
+
+Porównanie: uruchom ten sam task raz z tax_mode=gross, raz z net.
+
+====================================================================
+  WYNIKI
+====================================================================
+
+Folder: analysis_results\<task>__<data_godzina>\
+
+   run.log                          pełny log (z tracebackiem przy błędzie)
+   summary_gross_USD_real.csv       wyniki GROSS
+   summary_net_PLN_USD_real.csv     wyniki po Belce (jeśli tax_mode=net)
+   charts\                          wykresy PNG
+   tables\                          tabele podsumowań PNG
+   crash\                           crash-test: najgorsze okna 3/5/7/10 lat
+
+====================================================================
+  ZAAWANSOWANE
+====================================================================
+
+   run_task.cmd <task> --dry-run    podgląd komend bez wykonywania
+   run_all_tasks.cmd                batch: wiele tasków naraz
+   cleanup_old_results.cmd          usuń stare przebiegi (domyślnie: zostaw 5)
+   run_tests.cmd                    402 testy jednostkowe (wymaga pytest)
+
+====================================================================
+  INSTALACJA ZALEŻNOŚCI PYTHON
+====================================================================
+
+Szybka instalacja:
+   pip install -r requirements.txt
+
+Reprodukowalne środowisko:
+   pip install -r requirements-lock.txt
+
+Jeśli yfinance przestanie działać po aktualizacji:
+   pip install -r requirements-lock.txt
+
+====================================================================
+  STRUKTURA PLIKÓW
+====================================================================
+
+Szczegółowa mapa z klasyfikacją [USER]/[AUTO]/[LIB]/[DEV]:
+   docs\README_STRUCTURE.md
+
+Nie musisz znać plików w app\bin\ — to silnik projektu.
+Ty korzystasz tylko z komend .cmd w katalogu głównym.
+
+====================================================================
+  DOKUMENTACJA
+====================================================================
+
+   README.md                           główna dokumentacja
+   docs\README_STRUCTURE.md            mapa plików projektu
+   docs\README_METHODOLOGY.md          metodologia backtestów
+   docs\README_TASK_MODEL_STAGE1.md    model tasków
+   docs\README_TEST_PROCEDURE_2_2_5A.md  procedura testowa
+   docs\CHANGELOG_2_2_5A.md            historia zmian 2.2.5A

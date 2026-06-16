@@ -1,0 +1,6 @@
+﻿Ticker,ISIN,ASSET,CCY,WEIGHT,COST,LIB_COL,NAME,ROLE,NOTE
+SYNTH_US_STOCKS,SYNTH_US_STOCKS,SHARES,USD,20,0,US_STOCKS_TR,Synthetic US Stocks TR,USA large cap / broad USA,Synthetic proxy
+SYNTH_US_SMALL_VALUE,SYNTH_US_SMALL_VALUE,SHARES,USD,20,0,US_SMALL_VALUE_TR,Synthetic US Small Value TR,USA small value,Synthetic proxy
+SYNTH_US_TBILLS,SYNTH_US_TBILLS,BOND,USD,20,0,US_TBILLS_TR,Synthetic US T-Bills TR,Short Treasury proxy,Approximation for 1-3Y/VUDS; shorter duration than SHY/VUDS
+SYNTH_US_LT_BONDS,SYNTH_US_LT_BONDS,BOND,USD,20,0,US_LT_BONDS_TR,Synthetic US Long Treasury Bonds TR,USA Treasury 20+Y,Synthetic proxy
+SYNTH_GOLD,SYNTH_GOLD,RAW,USD,20,0,GOLD_USD,Synthetic Gold USD,Gold,Synthetic proxy

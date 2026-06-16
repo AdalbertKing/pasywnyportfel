@@ -1,0 +1,6 @@
+Ticker,YFTicker,ISIN,ASSET,CCY,WEIGHT,COST,NAME,ROLE
+VTI,VTI,US9229087690,SHARES,USD,20,0,Vanguard Total Stock Market ETF,Duże/szerokie spółki USA
+VBR,VBR,US9229086114,SHARES,USD,20,0,Vanguard Small-Cap Value ETF,Małe spółki value USA
+IEF,IEF,US4642874402,BOND,USD,20,0,iShares 7-10 Year Treasury Bond ETF,10-letnie obligacje USA
+TLT,TLT,US4642874329,BOND,USD,20,0,iShares 20+ Year Treasury Bond ETF,Długie obligacje USA
+IAU,IAU,US4642851053,RAW,USD,20,0,iShares Gold Trust,Złoto

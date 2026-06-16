@@ -1,0 +1,31 @@
+pasywnyportfel ver. 2.2 release validation
+
+Rollback: pasywnyportfel_VER_2_1_5_CLEAN_ROOT.zip
+Compiled Python files: 23
+Checks: {"stage1_quick_check": 0, "stage1_clean_audit": 0, "release_root_audit": 0, "validate_daily": 0, "validate_user": 0, "check_quotes_daily_empty_expected_fail": 1}
+Note: check_quotes_daily_empty_expected_fail must be rc=2 on empty library before refresh.
+Root files:
+1-start_setup.cmd
+ABOUT.txt
+INSTRUKCJA_START.txt
+README.md
+SOURCES.md
+VERSION.txt
+check_common_data.cmd
+check_project.cmd
+check_quotes.cmd
+check_stage1.cmd
+check_stage1_clean.cmd
+check_task.cmd
+create_task.cmd
+refresh_data.cmd
+refresh_quotes.cmd
+requirements.txt
+run_task.cmd
+
+Root dirs:
+analysis_definitions
+app
+data
+docs
+runtime

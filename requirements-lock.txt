@@ -1,0 +1,14 @@
+# pasywnyportfel — zależności zablokowane (lock file)
+# Dokładne wersje zweryfikowane podczas testów wersji 2.2.5A.
+# Użyj tego pliku jeśli chcesz odtworzyć identyczne środowisko:
+#   pip install -r requirements-lock.txt
+#
+# UWAGA: yfinance zmienia API często. Jeśli pobieranie danych przestanie
+# działać, zaktualizuj yfinance i przetestuj refresh_quotes.py.
+
+pandas==2.2.3
+numpy==2.2.3
+matplotlib==3.10.8
+yfinance==0.2.66
+requests==2.32.5
+python-dateutil==2.9.0.post0
