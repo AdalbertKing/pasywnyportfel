@@ -41,24 +41,34 @@ if str(ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 # Stałe wizualne — zgodnie z GUI_PROJECT_SPEC.md §3 (Standard wizualny)
 # ---------------------------------------------------------------------------
-SIDEBAR_WIDTH = 150
+SIDEBAR_WIDTH = 160  # górna granica zakresu 140-160px ze specu — więcej miejsca dla większej czcionki
 PAD = 4
 
 FONT_FAMILY = "Segoe UI"
 MONO_FAMILY = "Consolas"
 
-# Uwaga: w Tkinter dodatni rozmiar = punkty, UJEMNY = piksele.
-# Spec podaje rozmiary w px, więc wszystkie poniżej są ujemne dla
-# dokładności 1:1 z GUI_PROJECT_SPEC.md §3.
-F_LABEL = (FONT_FAMILY, -9)            # etykiety, tekst główny, inputy, dropdowny
-F_LABEL_B = (FONT_FAMILY, -9, "bold")
-F_SECTION = (FONT_FAMILY, -8, "bold")  # nagłówki sekcji (uppercase)
-F_HINT = (FONT_FAMILY, -7)             # hinty, ścieżki, tagi
-F_HINT8 = (FONT_FAMILY, -8)
-F_SIDEBAR_TITLE = (FONT_FAMILY, -7, "bold")
-F_SIDEBAR_TASK = (FONT_FAMILY, -9)
-F_CONSOLE = (MONO_FAMILY, -8)
-F_STATUSBAR = (FONT_FAMILY, -7)
+# Uwaga: w Tkinter dodatni rozmiar = punkty, UJEMNY = piksele (1:1 z ekranem,
+# BEZ skalowania DPI). Wartości bazowe poniżej to "logiczne" rozmiary ze
+# specu (§3); FONT_SCALE mnoży je do rozmiaru faktycznie czytelnego na
+# fizycznym monitorze. Pierwsza wersja (scale=1.0 => 7-9px) okazała się
+# nieczytelna na 24" FHD bez okularów — stąd 1.45. Jedna liczba do zmiany,
+# jeśli trzeba skorygować ponownie.
+FONT_SCALE = 1.45
+
+
+def _px(base: float) -> int:
+    return -round(base * FONT_SCALE)
+
+
+F_LABEL = (FONT_FAMILY, _px(9))            # etykiety, tekst główny, inputy, dropdowny
+F_LABEL_B = (FONT_FAMILY, _px(9), "bold")
+F_SECTION = (FONT_FAMILY, _px(8), "bold")  # nagłówki sekcji (uppercase)
+F_HINT = (FONT_FAMILY, _px(7))             # hinty, ścieżki, tagi
+F_HINT8 = (FONT_FAMILY, _px(8))
+F_SIDEBAR_TITLE = (FONT_FAMILY, _px(7), "bold")
+F_SIDEBAR_TASK = (FONT_FAMILY, _px(9))
+F_CONSOLE = (MONO_FAMILY, _px(8))
+F_STATUSBAR = (FONT_FAMILY, _px(7))
 
 COL_BG = "#1e1e1e"
 COL_PANEL = "#252526"
@@ -107,7 +117,7 @@ class TaskRow(ctk.CTkFrame):
 
         dot = ctk.CTkLabel(
             self, text="●", text_color=self.DOT_COLOR.get(task["status"], COL_TEXT_DIM),
-            font=F_SIDEBAR_TASK, width=12,
+            font=F_SIDEBAR_TASK, width=16,
         )
         dot.grid(row=0, column=0, padx=(4, 2), pady=1, sticky="w")
 
@@ -154,12 +164,12 @@ class Sidebar(ctk.CTkFrame):
         self.set_tasks(DEMO_TASKS)
 
         btn_new = ctk.CTkButton(
-            self, text="+ Nowy task", font=F_HINT8, height=24, command=self._stub_new_task,
+            self, text="+ Nowy task", font=F_HINT8, height=30, command=self._stub_new_task,
         )
         btn_new.grid(row=3, column=0, padx=PAD, pady=(2, 2), sticky="ew")
 
         btn_refresh = ctk.CTkButton(
-            self, text="⟳ Odśwież dane CPI/FX", font=F_HINT8, height=24,
+            self, text="⟳ Odśwież dane CPI/FX", font=F_HINT8, height=30,
             fg_color="transparent", border_width=1, border_color=COL_BORDER,
             command=self._stub_refresh_data,
         )
@@ -232,7 +242,7 @@ class ConsolePanel(ctk.CTkFrame):
         header.grid_columnconfigure(1, weight=1)
 
         self._toggle_btn = ctk.CTkButton(
-            header, text="▼ rozwiń", font=F_HINT8, width=70, height=18,
+            header, text="▼ rozwiń", font=F_HINT8, width=86, height=24,
             fg_color="transparent", text_color=COL_TEXT_DIM, hover_color=COL_BORDER,
             command=self._toggle,
         )
@@ -243,7 +253,7 @@ class ConsolePanel(ctk.CTkFrame):
         ).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
         copy_btn = ctk.CTkButton(
-            header, text="📋 kopiuj", font=F_HINT8, width=70, height=18,
+            header, text="📋 kopiuj", font=F_HINT8, width=86, height=24,
             fg_color="transparent", text_color=COL_TEXT_DIM, border_width=1, border_color=COL_BORDER,
             command=self._copy_to_clipboard,
         )
@@ -265,7 +275,7 @@ class ConsolePanel(ctk.CTkFrame):
 
     @staticmethod
     def _lines_to_px(lines: int) -> int:
-        return 18 * lines + 10
+        return 23 * lines + 12
 
     def _toggle(self):
         self._expanded = not self._expanded
@@ -305,7 +315,7 @@ class StatusBar(ctk.CTkFrame):
     """Jedna linia na dole: health check (lewa) / wersja (prawa) — §5."""
 
     def __init__(self, master, **kwargs):
-        super().__init__(master, fg_color=COL_SIDEBAR, corner_radius=0, height=20, **kwargs)
+        super().__init__(master, fg_color=COL_SIDEBAR, corner_radius=0, height=26, **kwargs)
         self.grid_propagate(False)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
