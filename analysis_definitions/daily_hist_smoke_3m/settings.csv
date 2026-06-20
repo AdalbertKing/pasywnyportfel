@@ -20,7 +20,7 @@ windows,"3,5,7,10"
 focus,
 value_col_usd,TOTAL_USD_POST_REAL
 value_col_pln,TOTAL_PLN_POST_REAL
-plot_currencies,USD,PLN
+plot_currencies,"USD,PLN"
 make_plots,1
 make_summary_png,1
 make_crash,0

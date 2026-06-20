@@ -6,6 +6,7 @@ dbstart_synth,2005-01-01
 dbstart_hist,2005-01-31
 saldo,100000
 freq,monthly
+analysis_mode,both
 tax_mode,gross
 tax_base,PLN
 tax_rate,0.19
@@ -19,6 +20,7 @@ windows,"3,5,7,10"
 focus,
 value_col_usd,TOTAL_USD_POST_REAL
 value_col_pln,TOTAL_PLN_POST_REAL
+plot_currencies,"USD,PLN"
 make_plots,1
 make_summary_png,1
 make_crash,1

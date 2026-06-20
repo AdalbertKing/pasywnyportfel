@@ -290,29 +290,19 @@ class Engine:
             # Realne kolumny (sprawdzone w pliku użytkownika): ID, LABEL,
             # MAP_SYNTH, MAP_HIST, REBALANCE, MAX_DRIFT, INCLUDE.
             raw_portfolios = task_config.read_portfolios(portfolios_path)
+            portfolios = [self._adapt_portfolio_row(r) for r in raw_portfolios]
             # tax_label(): funkcja NIE ISTNIEJE w realnym repo — budujemy
             # etykietę inline z potwierdzonych kluczy tax_mode/tax_base/tax_rate.
             tax_label = self._build_tax_label(settings)
 
             validation_error = None
-            hist_warnings_by_id: dict[str, list[str]] = {}
             if validate_task_mod:
                 try:
-                    # Potwierdzona sygnatura: validate_task(root, task_name) ->
-                    # (task_dir, included, checked_maps, start_iso, end_iso,
-                    # warnings). RZUCA wyjątek przy błędzie krytycznym; przy
-                    # sukcesie 6. element to lista ostrzeżeń typu "<ID> (plik):
-                    # brak [...] w HIST_LIBRARY_DAILY.csv" — wcześniej była
-                    # całkiem ignorowana nawet przy sukcesie, teraz mapowana
-                    # po ID portfela do ⚠ przy karcie.
-                    _, _, _, _, _, warnings = validate_task_mod.validate_task(ROOT, task_name)
-                    for w in warnings:
-                        pid = w.split(" (", 1)[0].strip()
-                        hist_warnings_by_id.setdefault(pid, []).append(w)
+                    # Potwierdzona sygnatura: validate_task(root, task_name) —
+                    # RZUCA wyjątek przy błędzie (FileNotFoundError/ValueError).
+                    validate_task_mod.validate_task(ROOT, task_name)
                 except Exception as exc:  # noqa: BLE001
                     validation_error = str(exc)
-
-            portfolios = [self._adapt_portfolio_row(r, hist_warnings_by_id) for r in raw_portfolios]
 
             return {
                 "settings": settings, "portfolios": portfolios,
@@ -371,7 +361,7 @@ class Engine:
         return drift_on, drift_pct, period_on, period_value
 
     @staticmethod
-    def _adapt_portfolio_row(raw: dict, hist_warnings_by_id: dict | None = None) -> dict:
+    def _adapt_portfolio_row(raw: dict) -> dict:
         """
         Tłumaczy surowy wiersz z task_config.read_portfolios() — kolumny
         potwierdzone wprost z pliku użytkownika: ID, LABEL, MAP_SYNTH,
@@ -381,12 +371,6 @@ class Engine:
         spod MAP_SYNTH/MAP_HIST (kolumna WEIGHT w TYM pliku, potwierdzone w
         validate_task.py: weight_sum()) — jeszcze nieobsłużone (TODO),
         więc pokazujemy ścieżki wprost zamiast zmyślać czytelny opis.
-
-        hist_warnings_by_id: realne ostrzeżenia z validate_task() (6. element
-        zwracanej krotki), zmapowane po ID portfela. UWAGA UCZCIWOŚCI: to
-        sprawdza czy ticker w ogóle ISTNIEJE w HIST_LIBRARY_DAILY.csv, NIE
-        czy pokrywa cały zakres dat taska — głębsza analiza luk dat to
-        osobna, jeszcze niezrobiona funkcja.
         """
         included = truthy_like(raw.get("INCLUDE", "1"))
         map_synth = raw.get("MAP_SYNTH", "")
@@ -397,16 +381,12 @@ class Engine:
         drift_on, drift_pct, period_on, period_value = Engine._resolve_rebalance_display(
             rebalance, max_drift, rebal_period,
         )
-        pid = raw.get("ID", "")
-        warns = (hist_warnings_by_id or {}).get(pid, [])
         return {
-            "id": pid,
-            "name": raw.get("LABEL") or pid or "(brak LABEL)",
+            "name": raw.get("LABEL") or raw.get("ID") or "(brak LABEL)",
             "include": included,
             "synth": bool(map_synth),
             "hist": bool(map_hist),
-            "hist_warning": bool(warns),
-            "hist_warning_text": warns[0] if warns else "",
+            "hist_warning": False,  # TODO: wymaga sprawdzenia pokrycia dat w pliku MAP_HIST
             "drift_on": drift_on,
             "drift_pct": drift_pct,
             "period_on": period_on,
@@ -446,19 +426,15 @@ class Engine:
         return prefix, flags, values
 
     def validate(self, task_name: str) -> tuple[bool, str]:
-        """Woła validate_task(ROOT, task_name) — potwierdzone na realnym repo:
-        zwraca 6 wartości (task_dir, included, checked_maps, start_iso,
-        end_iso, warnings), rzuca wyjątek przy błędzie krytycznym."""
+        """Woła validate_task(ROOT, task_name) — potwierdzone: rzuca wyjątek
+        przy błędzie, zwraca krotkę szczegółów przy sukcesie."""
         if not validate_task_mod:
             return True, "(tryb demo — walidacja niedostępna)"
         try:
-            task_dir, included, checked_maps, start_iso, end_iso, warnings = validate_task_mod.validate_task(
+            task_dir, included, checked_maps, start_iso, end_iso = validate_task_mod.validate_task(
                 ROOT, task_name,
             )
-            msg = f"OK — {included} portfeli, okres {start_iso} → {end_iso}"
-            if warnings:
-                msg += "\n" + "\n".join(f"  ⚠ {w}" for w in warnings)
-            return True, msg
+            return True, f"OK — {included} portfeli, okres {start_iso} → {end_iso}"
         except Exception as exc:  # noqa: BLE001
             return False, str(exc)
 
@@ -791,16 +767,11 @@ class ParamsGrid(ctk.CTkFrame):
 
 
 class PortfolioRow(ctk.CTkFrame):
-    """Pojedynczy portfel w analizie — GUI_PROJECT_SPEC.md §6.
-    Klikalny (poza checkboxami/przyciskiem) — ustawia focus, ten sam wzorzec
-    co wybór taska w sidebarze (TaskRow.set_active)."""
+    """Pojedynczy portfel w analizie — GUI_PROJECT_SPEC.md §6."""
 
-    def __init__(self, master, portfolio: dict, on_select=None, **kwargs):
+    def __init__(self, master, portfolio: dict, **kwargs):
         super().__init__(master, fg_color=COL_PANEL, border_width=1, border_color=COL_BORDER, **kwargs)
         self.grid_columnconfigure(1, weight=1)
-        self.portfolio = portfolio
-        self._on_select = on_select
-        self._active = False
 
         included = portfolio.get("include", True)
         text_color = COL_TEXT if included else COL_TEXT_DIM
@@ -817,13 +788,6 @@ class PortfolioRow(ctk.CTkFrame):
         )
         self._name_lbl.grid(row=0, column=1, padx=(0, PAD), pady=(PAD_TIGHT, 0), sticky="w")
 
-        # Klik na sam wiersz (tło/nazwę) ustawia focus — NIE na checkboxach
-        # ani przycisku "Pobierz brakujące", żeby nie kolidować z ich własnym
-        # zachowaniem kliknięcia.
-        for widget in (self, self._name_lbl):
-            widget.bind("<Button-1>", self._handle_click)
-        self.configure(cursor="hand2")
-
         badges = ctk.CTkFrame(self, fg_color="transparent")
         badges.grid(row=0, column=2, padx=PAD, pady=(PAD_TIGHT, 0), sticky="e")
 
@@ -831,54 +795,47 @@ class PortfolioRow(ctk.CTkFrame):
         # state="disabled" zachowuje wizualny stan ✓/☐ bez interakcji).
         # Decyzja: oba off = BH, bez osobnego "BH" labelu — sam widok dwóch
         # pustych checkboxów już to komunikuje.
-        # Cały rząd jest informacyjny (podgląd, nie edycja) — mniejsze niż
-        # INCLUDE (które jest faktycznie klikalne) i z ciaśniejszym odstępem.
-        info_box = _dim(10)
         drift_on = bool(portfolio.get("drift_on"))
         drift_pct = portfolio.get("drift_pct", "")
         drift_txt = f"DRIFT {drift_pct}%" if drift_on and drift_pct else "DRIFT"
         cb_drift = ctk.CTkCheckBox(
-            badges, text=drift_txt, font=F_HINT, width=info_box, height=info_box,
+            badges, text=drift_txt, font=F_HINT8, width=_dim(14), height=_dim(14),
             variable=tk.BooleanVar(value=drift_on), state="disabled",
         )
-        cb_drift.pack(side="left", padx=(0, PAD_TIGHT))
+        cb_drift.pack(side="left", padx=(0, PAD_LOOSE))
 
         period_on = bool(portfolio.get("period_on"))
         period_value = portfolio.get("period_value", "")
-        period_txt = f"Autorebalans {period_value}" if period_on and period_value else "Autorebalans"
+        period_txt = f"AUTO {period_value}" if period_on and period_value else "AUTO"
         cb_period = ctk.CTkCheckBox(
-            badges, text=period_txt, font=F_HINT, width=info_box, height=info_box,
+            badges, text=period_txt, font=F_HINT8, width=_dim(14), height=_dim(14),
             variable=tk.BooleanVar(value=period_on), state="disabled",
         )
-        cb_period.pack(side="left", padx=(0, PAD_TIGHT))
+        cb_period.pack(side="left", padx=(0, PAD_LOOSE))
 
         self.synth_var = tk.BooleanVar(value=bool(portfolio.get("synth")))
         ctk.CTkCheckBox(
-            badges, text="SYNTH", variable=self.synth_var, font=F_HINT,
-            width=info_box, height=info_box, state="disabled",
-        ).pack(side="left", padx=(0, PAD_TIGHT))
+            badges, text="SYNTH", variable=self.synth_var, font=F_HINT8,
+            width=_dim(14), height=_dim(14),
+        ).pack(side="left", padx=(0, PAD))
 
         self.hist_var = tk.BooleanVar(value=bool(portfolio.get("hist")))
         ctk.CTkCheckBox(
-            badges, text="HIST", variable=self.hist_var, font=F_HINT,
-            width=info_box, height=info_box, state="disabled",
+            badges, text="HIST", variable=self.hist_var, font=F_HINT8,
+            width=_dim(14), height=_dim(14),
         ).pack(side="left")
 
         detail_text = portfolio.get("composition", "—")
         ctk.CTkLabel(
             self, text=detail_text, font=F_HINT, text_color=COL_TEXT_DIM, anchor="w",
-            wraplength=_dim(480), justify="left",
         ).grid(row=1, column=1, columnspan=2, padx=(0, PAD), pady=(0, PAD_TIGHT), sticky="ew")
 
         if portfolio.get("hist_warning"):
             warn = ctk.CTkFrame(self, fg_color="transparent")
             warn.grid(row=2, column=0, columnspan=3, padx=PAD, pady=(0, PAD_TIGHT), sticky="ew")
-            warn_text = portfolio.get("hist_warning_text") or "⚠ brak tickera w HIST_LIBRARY_DAILY.csv"
-            if not warn_text.startswith("⚠"):
-                warn_text = f"⚠ {warn_text}"
             ctk.CTkLabel(
-                warn, text=warn_text, font=F_HINT, text_color=COL_WARN, anchor="w",
-            ).pack(side="left", fill="x", expand=True)
+                warn, text="⚠ brak danych HIST dla części okresu", font=F_HINT, text_color=COL_WARN,
+            ).pack(side="left")
             ctk.CTkButton(
                 warn, text="Pobierz brakujące", font=F_HINT, height=_dim(14),
                 command=self._stub_fetch_hist,
@@ -892,14 +849,6 @@ class PortfolioRow(ctk.CTkFrame):
     @staticmethod
     def _stub_fetch_hist():
         print("[TODO] Pobierz brakujące dane HIST (refresh_quotes.py w wątku)")
-
-    def _handle_click(self, _event=None):
-        if self._on_select:
-            self._on_select(self.portfolio)
-
-    def set_active(self, active: bool):
-        self._active = active
-        self.configure(border_color=COL_ACCENT if active else COL_BORDER, border_width=2 if active else 1)
 
 
 class RunHistoryRow(ctk.CTkFrame):
@@ -986,69 +935,38 @@ class RunTab(ctk.CTkFrame):
 
         toolbar = ctk.CTkFrame(top, fg_color="transparent")
         toolbar.grid(row=1, column=0, sticky="ew", padx=PAD, pady=(0, PAD))
-        toolbar.grid_columnconfigure(0, weight=0)
-        toolbar.grid_columnconfigure(1, weight=1)
-
-        btns = ctk.CTkFrame(toolbar, fg_color="transparent")
-        btns.grid(row=0, column=0, sticky="nw")
+        for i in range(4):
+            toolbar.grid_columnconfigure(i, weight=1)
 
         self._run_btn = ctk.CTkButton(
-            btns, text="▶ Uruchom", font=F_LABEL_B, height=BTN_HEIGHT, width=_dim(85),
+            toolbar, text="▶ Uruchom", font=F_LABEL_B, height=BTN_HEIGHT,
             fg_color=COL_OK, hover_color="#4CB592", text_color="#0a0a0a",
             command=self._on_run_clicked,
         )
-        self._run_btn.pack(side="left", padx=(0, PAD_TIGHT))
+        self._run_btn.grid(row=0, column=0, padx=(0, PAD_TIGHT), sticky="ew")
 
         self._dryrun_btn = ctk.CTkButton(
-            btns, text="Dry-run", font=F_LABEL, height=BTN_HEIGHT, width=_dim(65),
+            toolbar, text="Dry-run", font=F_LABEL, height=BTN_HEIGHT,
             fg_color="transparent", border_width=1, border_color=COL_BORDER,
             command=lambda: self._on_run_clicked(dry_run=True),
         )
-        self._dryrun_btn.pack(side="left", padx=PAD_TIGHT)
+        self._dryrun_btn.grid(row=0, column=1, padx=PAD_TIGHT, sticky="ew")
 
         self._refresh_btn = ctk.CTkButton(
-            btns, text="Refresh HIST", font=F_LABEL, height=BTN_HEIGHT, width=_dim(85),
+            toolbar, text="Refresh HIST", font=F_LABEL, height=BTN_HEIGHT,
             fg_color="transparent", border_width=1, border_color=COL_BORDER,
             command=self._stub_refresh_hist,
         )
-        self._refresh_btn.pack(side="left", padx=PAD_TIGHT)
+        self._refresh_btn.grid(row=0, column=2, padx=PAD_TIGHT, sticky="ew")
 
         self._validate_btn = ctk.CTkButton(
-            btns, text="Waliduj", font=F_LABEL, height=BTN_HEIGHT, width=_dim(65),
+            toolbar, text="Waliduj", font=F_LABEL, height=BTN_HEIGHT,
             fg_color="transparent", border_width=1, border_color=COL_BORDER,
             command=self._on_validate_clicked,
         )
-        self._validate_btn.pack(side="left", padx=PAD_TIGHT)
+        self._validate_btn.grid(row=0, column=3, padx=(PAD_TIGHT, 0), sticky="ew")
 
         self._action_buttons = [self._dryrun_btn, self._refresh_btn, self._validate_btn]
-
-        # -- panel szczegółów zaznaczonego portfela: kwadrat (przyszły wykres
-        # kołowy składu) + krótkie info (rebalans, ścieżki map). Wypełnia
-        # miejsce zwolnione przez zwężenie przycisków po lewej.
-        detail = ctk.CTkFrame(toolbar, fg_color=COL_PANEL, border_width=1, border_color=COL_BORDER)
-        detail.grid(row=0, column=1, sticky="nsew", padx=(PAD_LOOSE, 0))
-        detail.grid_columnconfigure(1, weight=1)
-
-        pie_size = _dim(64)
-        self._pie_placeholder = ctk.CTkFrame(
-            detail, fg_color=COL_BG, border_width=1, border_color=COL_BORDER,
-            width=pie_size, height=pie_size,
-        )
-        self._pie_placeholder.grid(row=0, column=0, rowspan=2, padx=PAD, pady=PAD, sticky="n")
-        self._pie_placeholder.grid_propagate(False)  # kwadrat niezależnie od (na razie braku) zawartości
-
-        self._detail_name_lbl = ctk.CTkLabel(
-            detail, text="Kliknij portfel na liście powyżej", font=F_LABEL_B,
-            text_color=COL_TEXT_DIM, anchor="w",
-        )
-        self._detail_name_lbl.grid(row=0, column=1, sticky="w", padx=(0, PAD), pady=(PAD, 0))
-
-        self._detail_info_lbl = ctk.CTkLabel(
-            detail, text="", font=F_HINT, text_color=COL_TEXT_DIM, anchor="w", justify="left",
-        )
-        self._detail_info_lbl.grid(row=1, column=1, sticky="nw", padx=(0, PAD), pady=(0, PAD))
-
-        self._selected_portfolio: dict | None = None
 
         # -- dolny panel: ostatnie przebiegi --------------------------------------
         bottom = ctk.CTkFrame(self._paned, fg_color="transparent")
@@ -1082,33 +1000,10 @@ class RunTab(ctk.CTkFrame):
         for row in self._portfolio_rows:
             row.destroy()
         self._portfolio_rows.clear()
-        self._selected_portfolio = None
         for i, p in enumerate(portfolios):
-            row = PortfolioRow(self._portfolios_frame, p, on_select=self._on_portfolio_selected)
+            row = PortfolioRow(self._portfolios_frame, p)
             row.grid(row=i, column=0, sticky="ew", pady=(0, PAD_TIGHT))
             self._portfolio_rows.append(row)
-        if portfolios:
-            self._on_portfolio_selected(portfolios[0])  # ten sam wzorzec co auto-select pierwszego taska w sidebarze
-        else:
-            self._detail_name_lbl.configure(text="Kliknij portfel na liście powyżej", text_color=COL_TEXT_DIM)
-            self._detail_info_lbl.configure(text="")
-
-    def _on_portfolio_selected(self, portfolio: dict):
-        for row in self._portfolio_rows:
-            row.set_active(row.portfolio is portfolio)
-        self._selected_portfolio = portfolio
-
-        self._detail_name_lbl.configure(text=portfolio.get("name", "—"), text_color=COL_TEXT)
-        bits = []
-        if portfolio.get("drift_on"):
-            bits.append(f"DRIFT {portfolio.get('drift_pct', '')}%")
-        if portfolio.get("period_on"):
-            bits.append(f"Autorebalans {portfolio.get('period_value', '')}")
-        rebal_txt = " + ".join(bits) if bits else "Buy & Hold"
-        info = f"{rebal_txt}\n{portfolio.get('composition', '—')}"
-        self._detail_info_lbl.configure(text=info)
-        # Kwadrat zostaje pusty świadomie — wykres kołowy wymaga doczytania
-        # składu z plików MAP_SYNTH/MAP_HIST (TODO, patrz _adapt_portfolio_row).
 
     def _set_runs(self, runs: list[dict]):
         for child in self._runs_scroll.winfo_children():
