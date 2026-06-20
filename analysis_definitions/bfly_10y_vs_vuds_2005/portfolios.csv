@@ -1,5 +1,5 @@
-﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,INCLUDE
-bfly_classic,Golden Butterfly classic 7-10Y,maps\synth\golden_butterfly_synth_long_history.csv,maps\hist\golden_butterfly_hist_classic_proxy.csv,DRIFT,20,1
-bfly_ib_acc_short,Butterfly IB ACC-only modified 1-3Y,maps\synth\bfly_ib_acc_modified_short_treasury_syn.csv,maps\hist\bfly_ib_acc_modified_hist_classic_proxy.csv,DRIFT,20,1
-bfly_classic_fit,Golden Butterfly fit proxy 7-10Y,maps\synth\golden_butterfly_synth_long_history.csv,maps\hist\golden_butterfly_hist_fit_proxy.csv,DRIFT,20,1
-bfly_ib_acc_short_fit,Butterfly IB ACC-only modified 1-3Y fit proxy,maps\synth\bfly_ib_acc_modified_short_treasury_syn.csv,maps\hist\bfly_ib_acc_modified_hist_fit_proxy.csv,DRIFT,20,1
+﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,REBAL_PERIOD,INCLUDE
+bfly_classic,Golden Butterfly classic 7-10Y,maps\synth\golden_butterfly_synth_long_history.csv,maps\hist\golden_butterfly_hist_classic_proxy.csv,DRIFT,20,,1
+bfly_ib_acc_short,Butterfly IB ACC-only modified 1-3Y,maps\synth\bfly_ib_acc_modified_short_treasury_syn.csv,maps\hist\bfly_ib_acc_modified_hist_classic_proxy.csv,DRIFT,20,,1
+bfly_classic_fit,Golden Butterfly fit proxy 7-10Y,maps\synth\golden_butterfly_synth_long_history.csv,maps\hist\golden_butterfly_hist_fit_proxy.csv,DRIFT,20,,1
+bfly_ib_acc_short_fit,Butterfly IB ACC-only modified 1-3Y fit proxy,maps\synth\bfly_ib_acc_modified_short_treasury_syn.csv,maps\hist\bfly_ib_acc_modified_hist_fit_proxy.csv,DRIFT,20,,1

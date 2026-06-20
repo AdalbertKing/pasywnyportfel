@@ -1,0 +1,9 @@
+# Wymuszone konce linii - zeby git nie pokazywal falszywych "modified"
+# po kazdym checkout na Windows (core.autocrlf rozjezdza sie z historia).
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.csv text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.png binary
+*.jpg binary

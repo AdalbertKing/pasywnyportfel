@@ -5,6 +5,14 @@ Projekt GUI: Claude (Anthropic) na zlecenie autora
 Data: 2026-06-18
 Status: ZAAKCEPTOWANY — gotowy do implementacji
 
+**Rewizja 2026-06-19:** poprawka błędu projektowego — REBALANCE/MAX_DRIFT
+to atrybuty PER PORTFEL (kolumny w `portfolios.csv`), nie wspólny parametr
+taska, jak pierwotnie założono. Dotyczy §6 (Uruchom), §7 (Konfiguracja —
+usunięta osobna sekcja "Rebalansowanie"), §8 (Wyniki — rebalans per portfel
+zamiast pojedynczej wartości), §9 (Portfele — odwrócona decyzja: rebalans
+edytowany TUTAJ, nie tylko w Konfiguracji). Ustalone na podstawie realnego
+kodu (`analysis.py`, `validate_task.py`), nie założeń.
+
 ---
 
 ## 1. Technologia
@@ -76,19 +84,53 @@ D�ugie operacje → subprocess w wątku:
 - Przyciski: "+ Nowy task", "Odśwież dane CPI/FX"
 
 ### Parametry taska (siatka klucz-wartość)
-- Okres: start → end (lata)
-- Kapitał: kwota USD
-- Wyceny: monthly/weekly/daily
-- Waluty wynikowe: USD / USD + PLN
-- Podatek: tag net_PLN 19% / gross
-- Rebalans: ☑ Drift 20% ☐ Auto co — mies.
+- Okres: start → end (z settings.csv: `start`/`end`)
+- Saldo startowe: kwota (`saldo`)
+- Wyceny: monthly/weekly/daily (`freq`)
+- Waluty wykresów: lista (`plot_currencies`)
+- Podatek: tag net_PLN 19% / gross (zbudowany z `tax_mode`/`tax_base`/`tax_rate` — nie ma gotowej funkcji etykiety, GUI buduje ją sam)
+- Tryb: `analysis_mode` (np. synth_only)
 - Biblioteki: SYNTH OK / HIST OK
 
+> Rebalans (DRIFT/BH + próg %) **nie jest tu** — to atrybut PER PORTFEL
+> (`REBALANCE`/`MAX_DRIFT` w portfolios.csv), pokazywany przy każdym
+> portfelu w sekcji "Portfele w analizie" poniżej, nie jako wspólny
+> parametr taska.
+
+> **Wyceny ↔ czułość DRIFT — sprzężenie, nie dwa niezależne ustawienia.**
+> Potwierdzone w `ledger_engine.py`: ceny są resamplowane do wybranych
+> Wycen PRZED symulacją (`_resample_prices_to_freq`, linia 148), a
+> `is_drift_breached()` (linia 335) jest liczone WYŁĄCZNIE na tych
+> zresamplowanych datach. Czyli to samo `MAX_DRIFT=20%` ma różną realną
+> tolerancję zależnie od Wycen:
+> | Wyceny | Kiedy próg jest sprawdzany |
+> |---|---|
+> | daily | praktycznie codziennie — drift wyłapany niemal natychmiast |
+> | weekly | raz w tygodniu — może przejechać próg o kilka dni |
+> | monthly | raz w miesiącu — może przejechać próg nawet o miesiąc |
+>
+> GUI pokazuje to wprost jako podpowiedź pod siatką Parametrów (kolor
+> ostrzegawczy), bo Wyceny i MAX_DRIFT żyją w różnych miejscach ekranu
+> (Parametry vs lista Portfeli) i związek między nimi nie jest oczywisty
+> bez wyjaśnienia: *"ⓘ Wyceny (freq) ustalają jak często sprawdzany jest
+> próg DRIFT poniżej — przy rzadszych Wycenach portfel może przejechać
+> próg zanim zostanie skorygowany"*.
+>
+> Dotyczy WYŁĄCZNIE trybu DRIFT (warunkowego). Tryb roczny (`12M`/`ANNUAL`)
+> rebalansuje na sztywno wyznaczone daty kalendarzowe niezależnie od progu,
+> więc Wyceny wpływają tam tylko na to, która sesja w danym miesiącu zostanie
+> wybrana jako data rebalansu — nie na to, CZY rebalans się odbędzie.
+
 ### Portfele w analizie (lista)
-- Pełna nazwa portfela
+- Pełna nazwa portfela (`LABEL`, fallback `ID`)
 - Checkbox INCLUDE (lewy)
 - Checkboxy SYNTH / HIST per wariant
-- Skład po ludzku: Gold 20%, US Stocks 20%...
+- **Rebalans per portfel**: tag `Buy & Hold` / `Rebalans po DRIFTNN` / `Rebalans
+  roczny` — TRZY tryby, nie dwa. Tekst tagu to dosłownie `cmd_builders.
+  mode_label()` z silnika, nie własna etykieta GUI. To pole portfela, nie
+  taska — każdy portfel może mieć inny tryb.
+- Skład po ludzku: Gold 20%, US Stocks 20%... (wymaga doczytania pliku spod
+  MAP_SYNTH/MAP_HIST — TODO, na razie GUI pokazuje same ścieżki map)
 - ETF-y: GLD, SPY, IJS...
 - Ostrzeżenie HIST ⚠ + przycisk "Pobierz brakujące"
 - Portfel wyłączony: wyszarzony (opacity 0.5), BEZ skreślenia, tag "wyłączony"
@@ -113,21 +155,32 @@ D�ugie operacje → subprocess w wątku:
 
 ### Ostatnie przebiegi
 - Lista z tagiem OK (zielony) / FAIL (czerwony)
-- Timestamp, czas, tax_mode, drift, liczba portfeli
+- Timestamp, czas, tax_label, liczba portfeli (BEZ kolumny "drift" — to nie
+  jest wartość per-task, patrz uwaga w sekcji Parametry taska powyżej)
 - Link "📂 otwórz" → os.startfile(folder)
 
 ## 7. Zakładka: Konfiguracja
 
 ### Sekcje (jeden przewijalny ekran)
-1. **Okres analizy**: Start, End, Kapitał startowy, Wyceny (dropdown)
+1. **Okres analizy**: Start, End, Saldo startowe, Wyceny (dropdown)
 2. **Podatek (Belka)**: Tryb (dropdown gross/net), Waluta (dropdown PLN/USD), Stawka (pole)
    - Gdy gross → waluta i stawka wyszarzone
-3. **Rebalansowanie**: ☑ Drift [20] % ☐ Auto rebalans co [12] mies.
-   - Pole aktywne tylko gdy checkbox zaznaczony
-4. **Dane wejściowe**: ścieżki read-only (mono), ✓ przy istniejących
-5. **Opcje wyjścia**: ☑ Wykresy ☑ Tabela summary ☑ Najgorsze okresy [3,5,7,10] lat
+3. **Dane wejściowe**: ścieżki read-only (mono), ✓ przy istniejących
+4. **Opcje wyjścia**: ☑ Wykresy ☑ Tabela summary ☑ Najgorsze okresy [3,5,7,10] lat
    - "Najgorsze okresy" inline za checkboxem, nie osobny wiersz
-6. **Portfele w analizie**: jak w zakładce Uruchom (checkboxy, warianty, składy)
+5. **Portfele w analizie**: jak w zakładce Uruchom (checkboxy, warianty, składy)
+   — **PLUS edytowalny rebalans per portfel**: radio `BH` / `DRIFT` / `Roczny`
+   + pole `MAX_DRIFT %` (aktywne TYLKO przy `DRIFT`). TRZY tryby, potwierdzone
+   w `cmd_builders.ledger_cmd()`: `BH`→`--no-rebalance`, `DRIFT`→`--max-drift
+   NN --conditional-rebalance`, `12M`/`ANNUAL`/`YEARLY`→`--period 12M` (BEZ
+   parametru — to NIE jest edytowalny interwał `[N] mies.` jak zakładał
+   pierwotny spec; silnik akceptuje wyłącznie sztywno "co 12 miesięcy", więc
+   radio "Roczny" nie ma przy sobie żadnego pola). To jest jedyne miejsce
+   edycji rebalansu w tej zakładce — nie ma osobnej globalnej sekcji
+   "Rebalansowanie", bo `REBALANCE`/`MAX_DRIFT` to kolumny portfela w
+   portfolios.csv, nie ustawienie taska w settings.csv. Wzorzec aktywacji
+   pola progu (radio DRIFT → pole MAX_DRIFT) z poprzedniej wersji zostaje,
+   tylko powtórzony per wiersz portfela zamiast raz globalnie.
 
 ### Dolny pasek
 - "↩ Cofnij zmiany" (reload z dysku)
@@ -141,7 +194,9 @@ D�ugie operacje → subprocess w wątku:
   - 5. checkbox wyszarzony gdy 4 zaznaczone
   - FAIL przebiegi: czerwony tag, wyszarzony checkbox (brak danych do porównania)
 - Podgląd parametrów po prawej (kliknięcie na przebieg):
-  - Okres, kapitał, wyceny, podatek, rebalans, lista portfeli
+  - Okres, saldo, wyceny, podatek, lista portfeli (rebalans pokazany PRZY
+    KAŻDYM portfelu na liście — `BH`/`DRIFT NN%` — nie jako osobna wartość
+    taska, bo nią nie jest)
   - Sekcja "Zmienione vs poprzedni" z listą różnic
   - Przyciski: 📂 Folder, 📄 run.log, 🗑 Usuń
 
@@ -170,14 +225,19 @@ D�ugie operacje → subprocess w wątku:
 ### Tryb porównania (2-4 checkboxy)
 
 #### Parametry obu przebiegów obok siebie
-- Pełne: okres, kapitał, wyceny, podatek, rebalans, portfele
+- Pełne: okres, saldo, wyceny, podatek, portfele (rebalans NIE tutaj — patrz
+  Porównanie per portfel niżej, bo to atrybut portfela)
 
 #### Pasek różnic (żółty)
-- "Zmienione parametry (N różnic): podatek gross→net, drift 15%→20%, portfele 3→4"
+- "Zmienione parametry (N różnic): podatek gross→net, portfele 3→4, rebalans
+  zmieniony w 2 portfelach" — rebalans agregowany jako liczba portfeli ze
+  zmianą, NIE jako pojedyncza wartość "15%→20%" (różne portfele mogą się
+  zmienić różnie; szczegóły per portfel są w sekcji "Porównanie per portfel")
 - GUI NIE interpretuje co spowodowało różnicę — tylko pokazuje fakty
 
 #### Porównanie per portfel
 - Każdy portfel osobną sekcją z pełną nazwą
+- Rebalans tego portfela w obu przebiegach (`BH`/`DRIFT NN%`), z kolumną różnicy gdy się zmienił
 - Metryki obok siebie z kolumną różnic
 - Portfel tylko w jednym przebiegu → kreski (—), adnotacja "(tylko w B)"
 - Ostrzeżenie na dole: "Zmieniono N parametrów naraz — różnice są efektem łącznym"
@@ -189,8 +249,17 @@ D�ugie operacje → subprocess w wątku:
 
 ### Nagłówek
 - ID + opis
-- Bez rebalansu — to jest w Konfiguracji (wspólne dla taska)
-- Hint: "Rebalansowanie i podatek → zakładka Konfiguracja"
+- **Rebalans TUTAJ**: radio `BH` / `DRIFT` / `Roczny` + pole `MAX_DRIFT %`
+  (aktywne tylko przy `DRIFT` — `Roczny` to sztywne "co 12 miesięcy" bez
+  parametru, patrz §7 dla pełnego wyjaśnienia trzech trybów). POPRAWKA
+  względem pierwszej wersji specu: rebalans myślano jako "wspólny dla taska,
+  więc w Konfiguracji" — w realnym kodzie
+  `REBALANCE`/`MAX_DRIFT` to kolumny TEGO portfela w portfolios.csv, więc
+  naturalne miejsce na ich ustawienie jest przy tworzeniu portfela, tutaj.
+  Konfiguracja (§7) ma ten sam edytor jako drugie wejście do tych samych
+  danych (jak dwa widoki tego samego arkusza) — zmiana w jednym miejscu
+  jest widoczna w drugim po zapisie, bez konfliktu.
+- Hint: "Podatek → zakładka Konfiguracja (to ustawienie taska, nie portfela)"
 
 ### Tryb budowania (radio button)
 - ○ Indeksy historyczne — dane indeksowe od 1926 + ETF-y
@@ -268,7 +337,7 @@ D�ugie operacje → subprocess w wątku:
 - Kliknięcie zakładki, sortowanie tabeli, zmiana presetu kolumn
 - Show/hide pól (tax_mode gross→wyszarza walutę i stawkę)
 - Przebudowa komendy w konsoli
-- Aktywacja/deaktywacja pól (checkbox drift → pole progu)
+- Aktywacja/deaktywacja pól (radio BH/DRIFT → pole MAX_DRIFT), powtórzone per wiersz portfela, nie raz globalnie
 - Resize konsoli (rozwiń/zwiń)
 - os.startfile() — otwórz folder/plik/wykres
 
@@ -342,7 +411,7 @@ Każdy etap: commit → push → CI zielone → test na Windows → następny.
 |---|---|---|
 | 1 | Nowy użytkownik | Ekran powitalny → pasek "pierwszy raz" → auto-pobranie HIST → dialog nowego taska (nazwa+szablon→Portfele) |
 | 2 | Nowy portfel Yahoo + gross/net | Auto-start wspólna data → checkboxy porównania przebiegów (max 4) |
-| 3 | Zmiana drift + wyłączenie portfela | Pytanie o niezapisane zmiany → parametry przy przebiegach → diff |
+| 3 | Zmiana drift portfela + wyłączenie INNEGO portfela (oba w tej samej karcie listy portfeli) | Pytanie o niezapisane zmiany → parametry przy przebiegach → diff per portfel |
 | 4 | Awaria analizy | FAIL na liście z tracebackiem, wyszarzony checkbox porównania |
 | 5 | Szukanie recovery + porównanie | Sortowanie po kolumnie, presety, wykresy per przebieg (nie nakładane) |
 
