@@ -1,4 +1,4 @@
-﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,INCLUDE
-sp500,S&P 500,,maps\hist\sp500_hist.csv,BH,0,1
-us6040,US 60/40,,maps\hist\us6040_hist.csv,DRIFT,20,1
-bfly,Golden Butterfly,,maps\hist\bf_hist.csv,DRIFT,20,1
+﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,REBAL_PERIOD,INCLUDE
+sp500,S&P 500,,maps\hist\sp500_hist.csv,BH,0,,1
+us6040,US 60/40,,maps\hist\us6040_hist.csv,DRIFT,20,,1
+bfly,Golden Butterfly,,maps\hist\bf_hist.csv,DRIFT,20,,1

@@ -18,6 +18,7 @@ Eksportuje:
 """
 
 import csv
+import re
 import shutil
 import subprocess
 import sys
@@ -100,32 +101,109 @@ def safe_token(s: str) -> str:
     return s.strip("_-")
 
 
-def mode_label(rebalance: str, max_drift: str) -> str:
+# ---------------------------------------------------------------------------
+# PATCH 2026-06-19/20: REBAL_PERIOD — nowa, OPCJONALNA kolumna portfolios.csv,
+# niezależna od REBALANCE/MAX_DRIFT. Pozwala na rebalans okresowy (np. co 6M)
+# RAZEM z warunkowym drift-rebalansem w tym samym portfelu — silnik to wspiera
+# (ledger_engine.py: is_sched_rebal i is_drift_rebal mogą być oba aktywne, gdy
+# --conditional-rebalance NIE jest ustawione), ale REBALANCE jako pojedynczy
+# string nigdy takiej kombinacji nie generował.
+#
+# Wsteczna zgodność: brak kolumny REBAL_PERIOD w pliku (albo pusta wartość)
+# => rebal_period="" => zachowanie 1:1 jak przed patchem dla BH/DRIFT/ANNUAL.
+_REBAL_BH = {"BH", "B&H", "BUYHOLD", "BUY_AND_HOLD", "NO", "NONE", "NO_REBALANCE"}
+_REBAL_DRIFT = {"DRIFT", "D20", "DRIFT20", "CONDITIONAL"}
+_REBAL_ANNUAL = {"12M", "ANNUAL", "YEARLY"}
+_PERIOD_TOKEN_RE = re.compile(r"^\d+M$")
+
+
+def _resolve_rebalance(rebalance: str, max_drift, rebal_period: str = ""):
+    """
+    Rozwiązuje (REBALANCE, MAX_DRIFT, REBAL_PERIOD) na kanoniczny tryb.
+    Zwraca (kind, period_token, drift_val):
+      kind: "BH" | "DRIFT" | "PERIOD" | "COMBO" | "UNKNOWN"
+      period_token: np. "12M"/"6M", albo None gdy brak komponentu okresowego
+      drift_val: float >= 0 (0.0 gdy brak komponentu driftu)
+
+    RZUCA ValueError TYLKO gdy REBAL_PERIOD jest podane ale ma zły format —
+    to nowe pole, więc nie ma ryzyka złamania istniejących danych. Nie rzuca
+    dla nierozpoznanego REBALANCE — to robi dopiero ledger_cmd.
+    """
+    rb = str(rebalance or "").strip().upper()
+    period_raw = str(rebal_period or "").strip().upper()
+    try:
+        drift_val = float(str(max_drift).strip()) if str(max_drift).strip() else 0.0
+    except ValueError:
+        drift_val = 0.0
+
+    period_token = None
+    if period_raw:
+        if not _PERIOD_TOKEN_RE.match(period_raw):
+            raise ValueError(f"Zły format REBAL_PERIOD={rebal_period!r}; wymagane np. 12M, 6M, 3M, 1M")
+        period_token = period_raw
+    elif rb in _REBAL_ANNUAL:
+        period_token = "12M"
+
+    drift_on = False if rb in _REBAL_BH else (rb in _REBAL_DRIFT)
+
+    if drift_on and period_token:
+        return "COMBO", period_token, drift_val
+    if drift_on:
+        return "DRIFT", None, drift_val
+    if period_token:
+        return "PERIOD", period_token, 0.0
+    if rb in _REBAL_BH:
+        return "BH", None, 0.0
+    return "UNKNOWN", None, drift_val
+
+
+def _resolve_rebalance_safe(rebalance: str, max_drift, rebal_period: str = ""):
+    """Wariant non-raising do funkcji WYŚWIETLAJĄCYCH — błąd formatu REBAL_PERIOD
+    nie ma prawa wywalić listingu."""
+    try:
+        return _resolve_rebalance(rebalance, max_drift, rebal_period)
+    except ValueError:
+        return "UNKNOWN", None, 0.0
+
+
+def mode_label(rebalance: str, max_drift: str, rebal_period: str = "") -> str:
     rb = str(rebalance).strip().upper()
     md = str(max_drift).strip()
-    if rb in ["BH", "B&H", "BUYHOLD", "BUY_AND_HOLD", "NO", "NONE", "NO_REBALANCE"]:
+    kind, period_token, _ = _resolve_rebalance_safe(rebalance, max_drift, rebal_period)
+    if kind == "BH":
         return "Buy & Hold"
-    if rb in ["DRIFT", "D20", "DRIFT20", "CONDITIONAL"]:
+    if kind == "DRIFT":
         return f"Rebalans po DRIFT{md or '20'}"
-    if rb in ["12M", "ANNUAL", "YEARLY"]:
-        return "Rebalans roczny"
+    if kind == "PERIOD":
+        if period_token == "12M":
+            return "Rebalans roczny"
+        return f"Rebalans co {period_token}"
+    if kind == "COMBO":
+        base = "roczny" if period_token == "12M" else f"co {period_token}"
+        return f"Rebalans {base} + DRIFT{md or '20'}"
     return rb
 
 
-def file_mode_token(rebalance: str, max_drift: str) -> str:
+def file_mode_token(rebalance: str, max_drift: str, rebal_period: str = "") -> str:
     rb = str(rebalance).strip().upper()
     md = str(max_drift).strip()
-    if rb in ["BH", "B&H", "BUYHOLD", "BUY_AND_HOLD", "NO", "NONE", "NO_REBALANCE"]:
+    kind, period_token, _ = _resolve_rebalance_safe(rebalance, max_drift, rebal_period)
+    if kind == "BH":
         return "BH"
-    if rb in ["DRIFT", "D20", "DRIFT20", "CONDITIONAL"]:
+    if kind == "DRIFT":
         return f"DRIFT{md or '20'}"
-    if rb in ["12M", "ANNUAL", "YEARLY"]:
-        return "Rebalans roczny"
+    if kind == "PERIOD":
+        if period_token == "12M":
+            return "Rebalans roczny"
+        return f"PERIOD{period_token}"
+    if kind == "COMBO":
+        per = "ANNUAL" if period_token == "12M" else f"PERIOD{period_token}"
+        return f"DRIFT{md or '20'}_{per}"
     return safe_token(rb or "mode").upper()
 
 
-def display_name(label: str, dataset: str, rebalance: str, max_drift: str) -> str:
-    return f"{label} {dataset.upper()} / {mode_label(rebalance, max_drift)}"
+def display_name(label: str, dataset: str, rebalance: str, max_drift: str, rebal_period: str = "") -> str:
+    return f"{label} {dataset.upper()} / {mode_label(rebalance, max_drift, rebal_period)}"
 
 
 def detect_modes(portfolios: list[dict]) -> str:
@@ -133,12 +211,16 @@ def detect_modes(portfolios: list[dict]) -> str:
     for p in portfolios:
         rb = str(p.get("REBALANCE", "")).strip().upper()
         md = str(p.get("MAX_DRIFT", "")).strip()
-        if rb in ["BH", "B&H", "NO", "NONE", "NO_REBALANCE"]:
+        period = str(p.get("REBAL_PERIOD", "")).strip()
+        kind, period_token, _ = _resolve_rebalance_safe(rb, md, period)
+        if kind == "BH":
             modes.append("BH")
-        elif rb in ["DRIFT", "D20", "DRIFT20", "CONDITIONAL"]:
+        elif kind == "DRIFT":
             modes.append(f"DRIFT{md or 'X'}")
-        elif rb in ["12M", "ANNUAL", "YEARLY"]:
-            modes.append("12M")
+        elif kind == "PERIOD":
+            modes.append(period_token or "12M")
+        elif kind == "COMBO":
+            modes.append(f"DRIFT{md or 'X'}+{period_token}")
         else:
             modes.append(rb or "MODE")
     uniq = []
@@ -206,6 +288,7 @@ def ledger_cmd(
     out_path: str,
     rebalance: str,
     max_drift: str,
+    rebal_period: str = "",
 ):
     cmd = [
         sys.executable,
@@ -230,13 +313,20 @@ def ledger_cmd(
     if cpi_pl:
         cmd += ["--cpi-pl", str(rel(root, cpi_pl))]
 
-    rb = rebalance.strip().upper()
-    if rb in ["BH", "B&H", "NO", "NONE", "NO_REBALANCE"]:
+    # PATCH 2026-06-19/20: REBAL_PERIOD dodaje 4. tryb COMBO (rebalans
+    # okresowy + warunkowy drift naraz) — potwierdzone w ledger_engine.py,
+    # że silnik to wspiera gdy NIE ustawiamy --conditional-rebalance i
+    # podajemy realny --period razem z --max-drift>0. Gałęzie BH/DRIFT/
+    # PERIOD(=ANNUAL) produkują DOKŁADNIE te same argv co przed patchem.
+    kind, period_token, drift_val = _resolve_rebalance(rebalance, max_drift, rebal_period)
+    if kind == "BH":
         cmd += ["--period", "9999M", "--max-drift", "0", "--no-rebalance"]
-    elif rb in ["DRIFT", "D20", "DRIFT20", "CONDITIONAL"]:
+    elif kind == "DRIFT":
         cmd += ["--period", "9999M", "--max-drift", str(max_drift), "--conditional-rebalance"]
-    elif rb in ["12M", "ANNUAL", "YEARLY"]:
-        cmd += ["--period", "12M", "--max-drift", "0"]
+    elif kind == "PERIOD":
+        cmd += ["--period", period_token, "--max-drift", "0"]
+    elif kind == "COMBO":
+        cmd += ["--period", period_token, "--max-drift", str(max_drift)]
     else:
         raise ValueError(f"Nieznany REBALANCE={rebalance}")
 

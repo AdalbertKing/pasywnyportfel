@@ -170,7 +170,8 @@ def main():
             map_hist = p.get("MAP_HIST", "")
             rebalance = p.get("REBALANCE", "DRIFT")
             max_drift = p.get("MAX_DRIFT", "20")
-            mode_tok = file_mode_token(rebalance, max_drift)
+            rebal_period = p.get("REBAL_PERIOD", "")  # PATCH 2026-06-19/20: nowe, opcjonalne pole
+            mode_tok = file_mode_token(rebalance, max_drift, rebal_period)
 
             map_synth_path = None
             if not hist_only:
@@ -202,8 +203,8 @@ def main():
             db_hist = f"{hist_dir}/DB_{pid}_hist_{fsuf}.csv"
             ledger_hist = f"{hist_dir}/l_{pid}_hist_{mode_tok}.csv"
 
-            name_synth = display_name(label, "SYN", rebalance, max_drift)
-            name_hist = display_name(label, "HIST", rebalance, max_drift)
+            name_synth = display_name(label, "SYN", rebalance, max_drift, rebal_period)
+            name_hist = display_name(label, "HIST", rebalance, max_drift, rebal_period)
 
             if not args.no_db:
                 if not hist_only:
@@ -245,16 +246,16 @@ def main():
                 if not hist_only:
                     step(f"LEDGER SYNTHETIC: {label}")
                     print("Generuje wynikowy ledger z wynikami portfela syntetycznego.")
-                    print(f"  MODE: {mode_label(rebalance, max_drift)}")
+                    print(f"  MODE: {mode_label(rebalance, max_drift, rebal_period)}")
                     print(f"  OUT: {ledger_synth}")
-                    run(ledger_cmd(root, settings, str(map_synth_path), db_synth, ledger_synth, rebalance, max_drift), root, args.dry_run)
+                    run(ledger_cmd(root, settings, str(map_synth_path), db_synth, ledger_synth, rebalance, max_drift, rebal_period), root, args.dry_run)
 
                 if not synth_only:
                     step(f"LEDGER ETF HIST: {label}")
                     print("Generuje wynikowy ledger z wynikami portfela ETF/proxy historycznego na tym samym okresie.")
-                    print(f"  MODE: {mode_label(rebalance, max_drift)}")
+                    print(f"  MODE: {mode_label(rebalance, max_drift, rebal_period)}")
                     print(f"  OUT: {ledger_hist}")
-                    run(ledger_cmd(root, settings, str(map_hist_path), db_hist, ledger_hist, rebalance, max_drift), root, args.dry_run)
+                    run(ledger_cmd(root, settings, str(map_hist_path), db_hist, ledger_hist, rebalance, max_drift, rebal_period), root, args.dry_run)
 
             if not hist_only:
                 all_ledgers.append(ledger_synth)

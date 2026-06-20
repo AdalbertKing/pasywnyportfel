@@ -1,11 +1,11 @@
-﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,INCLUDE
-sp500,S&P 500,maps\synth\sp500_syn.csv,maps\hist\sp500_hist.csv,BH,0,1
-us6040,US 60/40,maps\synth\us6040_syn.csv,maps\hist\us6040_hist.csv,DRIFT,20,1
-perm,Permanent / Harry Browne,maps\synth\perm_syn.csv,maps\hist\perm_hist.csv,DRIFT,20,1
-bfly,Golden Butterfly,maps\synth\bfly_syn.csv,maps\hist\bf_hist.csv,DRIFT,20,1
-couch5050,Couch Potato 50/50,maps\synth\couch_potato_5050_syn.csv,maps\hist\couch_potato_5050_hist.csv,DRIFT,20,1
-talmud_us,Talmud US,maps\synth\talmud_us_syn.csv,maps\hist\talmud_us_hist.csv,DRIFT,20,1
-us7030,US 70/30,maps\synth\us7030_syn.csv,maps\hist\us7030_hist.csv,DRIFT,20,1
-us5050,US 50/50,maps\synth\us5050_syn.csv,maps\hist\us5050_hist.csv,DRIFT,20,1
-small_value_tilt,Small Value Tilt,maps\synth\small_value_tilt_syn.csv,maps\hist\small_value_tilt_hist.csv,DRIFT,20,1
-stocks_ltbonds_gold,Stocks / Long Bonds / Gold,maps\synth\stocks_ltbonds_gold_syn.csv,maps\hist\stocks_ltbonds_gold_hist.csv,DRIFT,20,1
+﻿ID,LABEL,MAP_SYNTH,MAP_HIST,REBALANCE,MAX_DRIFT,REBAL_PERIOD,INCLUDE
+sp500,S&P 500,maps\synth\sp500_syn.csv,maps\hist\sp500_hist.csv,BH,0,,1
+us6040,US 60/40,maps\synth\us6040_syn.csv,maps\hist\us6040_hist.csv,DRIFT,20,,1
+perm,Permanent / Harry Browne,maps\synth\perm_syn.csv,maps\hist\perm_hist.csv,DRIFT,20,,1
+bfly,Golden Butterfly,maps\synth\bfly_syn.csv,maps\hist\bf_hist.csv,DRIFT,20,,1
+couch5050,Couch Potato 50/50,maps\synth\couch_potato_5050_syn.csv,maps\hist\couch_potato_5050_hist.csv,DRIFT,20,,1
+talmud_us,Talmud US,maps\synth\talmud_us_syn.csv,maps\hist\talmud_us_hist.csv,DRIFT,20,,1
+us7030,US 70/30,maps\synth\us7030_syn.csv,maps\hist\us7030_hist.csv,DRIFT,20,,1
+us5050,US 50/50,maps\synth\us5050_syn.csv,maps\hist\us5050_hist.csv,DRIFT,20,,1
+small_value_tilt,Small Value Tilt,maps\synth\small_value_tilt_syn.csv,maps\hist\small_value_tilt_hist.csv,DRIFT,20,,1
+stocks_ltbonds_gold,Stocks / Long Bonds / Gold,maps\synth\stocks_ltbonds_gold_syn.csv,maps\hist\stocks_ltbonds_gold_hist.csv,DRIFT,20,,1
