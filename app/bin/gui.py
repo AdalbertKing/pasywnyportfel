@@ -133,8 +133,8 @@ PAD_TIGHT = _dim(1.5)  # ciasne odstępy, np. między kropką statusu a nazwą (
 PAD_LOOSE = _dim(6)    # luźniejsze odstępy, np. statusbar / nagłówek konsoli (~9px)
 
 # -- sidebar (zakres 140-160px ze specu, przeskalowany razem z resztą) -----------------
-SIDEBAR_WIDTH = _dim(110)      # ~160px @1.45 — startowa szerokość panelu
-SIDEBAR_MIN_WIDTH = _dim(97)   # ~140px @1.45 — dolna granica ze specu, sash nie zwęzi bardziej
+SIDEBAR_WIDTH = _dim(220)      # ~320px @1.45 — startowa szerokość panelu (x2: nazwy tasków się ucinały)
+SIDEBAR_MIN_WIDTH = _dim(194)  # ~280px @1.45 — dolna granica (x2 oryginału), sash nie zwęzi bardziej
 SIDEBAR_MAX_WIDTH = _dim(290)  # ~420px @1.45 — sufit, żeby nie dało się "zjeść" całej zakładki
 
 # -- pozostałe wymiary używane przez widgety poniżej ------------------------------------
@@ -1923,6 +1923,26 @@ class PasywnyPortfelGUI(ctk.CTk):
         analysis_path = find_script("analysis.py")
         exists = "✓ istnieje" if analysis_path.exists() else "✗ NIE ZNALEZIONO"
         self._log_to_console(f"[INFO] analysis.py: {analysis_path}  ({exists})")
+
+        # Maksymalizacja przy starcie — CELOWO odroczona przez after(), a nie
+        # wywołana wcześniej w __init__. Wywołanie state('zoomed') PRZED
+        # zbudowaniem wszystkich widgetów i zmapowaniem okna przez system
+        # bywa nadpisywane chwilę później (CustomTkinter/Tk same dostrajają
+        # geometrię/DPI scaling tuż po starcie) — to dokładnie ten zgłoszony
+        # bug: okno startowało zmaksymalizowane i natychmiast się kurczyło.
+        # after(10, ...) odpala to już po pełnym zbudowaniu okna i co
+        # najmniej jednym przebiegu pętli zdarzeń, kiedy stan faktycznie
+        # się utrzymuje. Działa natywnie na Windows ('zoomed' to standardowy
+        # stan Tk na tej platformie — target tego projektu); na innych
+        # systemach (np. Linux bez wsparcia 'zoomed') po prostu zostaje
+        # rozmiar z geometry() powyżej, bez wyjątku.
+        self.after(10, self._apply_maximized_state)
+
+    def _apply_maximized_state(self):
+        try:
+            self.state("zoomed")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _log_to_console(self, line: str):
         self.console.append_stdout_line(line)
