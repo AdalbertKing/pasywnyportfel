@@ -315,7 +315,7 @@ class Engine:
                 except Exception as exc:  # noqa: BLE001
                     validation_error = str(exc)
 
-            portfolios = [self._adapt_portfolio_row(r, hist_warnings_by_id) for r in raw_portfolios]
+            portfolios = [self._adapt_portfolio_row(r, task_name, hist_warnings_by_id) for r in raw_portfolios]
 
             return {
                 "settings": settings, "portfolios": portfolios,
@@ -374,16 +374,47 @@ class Engine:
         return drift_on, drift_pct, period_on, period_value
 
     @staticmethod
-    def _adapt_portfolio_row(raw: dict, hist_warnings_by_id: dict | None = None) -> dict:
+    def _read_map_components(task_name: str, map_rel_path: str) -> list[tuple[str, float]]:
+        """Czyta plik mapy (maps\\synth\\*.csv lub maps\\hist\\*.csv) i zwraca listę
+        (nazwa, waga_w_procentach) z kolumn NAME/WEIGHT — potwierdzone kolumny
+        w realnym pliku: Ticker,ISIN,ASSET,CCY,WEIGHT,COST,LIB_COL,NAME. WEIGHT
+        jest w punktach procentowych wprost (60, nie 0.6). Zwraca [] przy
+        braku pliku/błędzie/nieliczbowej wadze — wołający ma wtedy fallback
+        (pusty wykres/legenda)."""
+        if not map_rel_path or not task_name:
+            return []
+        try:
+            map_path = ROOT / "analysis_definitions" / task_name / map_rel_path.replace("\\", "/")
+            if not map_path.exists():
+                return []
+            with open(map_path, "r", newline="", encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+            out = []
+            for row in rows:
+                name = (row.get("NAME") or row.get("Ticker") or "").strip()
+                weight_raw = (row.get("WEIGHT") or "").strip()
+                if not name or not weight_raw:
+                    continue
+                try:
+                    out.append((name, float(weight_raw)))
+                except ValueError:
+                    continue
+            return out
+        except Exception:  # noqa: BLE001
+            return []
+
+    @staticmethod
+    def _adapt_portfolio_row(raw: dict, task_name: str = "", hist_warnings_by_id: dict | None = None) -> dict:
         """
         Tłumaczy surowy wiersz z task_config.read_portfolios() — kolumny
         potwierdzone wprost z pliku użytkownika: ID, LABEL, MAP_SYNTH,
         MAP_HIST, REBALANCE, MAX_DRIFT, REBAL_PERIOD, INCLUDE. Wszystkie
         cztery są PER PORTFEL (nie per task).
-        Skład portfela (np. "Gold 20%, Stocks 60%") wymaga doczytania pliku
-        spod MAP_SYNTH/MAP_HIST (kolumna WEIGHT w TYM pliku, potwierdzone w
-        validate_task.py: weight_sum()) — jeszcze nieobsłużone (TODO),
-        więc pokazujemy ścieżki wprost zamiast zmyślać czytelny opis.
+        Skład portfela (np. "Gold 20%, Stocks 60%") czytany z pliku pod
+        MAP_SYNTH (a gdy brak — spod MAP_HIST), kolumny NAME/WEIGHT
+        (potwierdzone w validate_task.py: weight_sum()). Zwracane jako
+        "components" (lista (nazwa, waga) do narysowania wykresu kołowego)
+        razem z "composition" (gotowy tekst ze ścieżkami, do osobnej linii).
 
         hist_warnings_by_id: realne ostrzeżenia z validate_task() (6. element
         zwracanej krotki), zmapowane po ID portfela. UWAGA UCZCIWOŚCI: to
@@ -402,6 +433,7 @@ class Engine:
         )
         pid = raw.get("ID", "")
         warns = (hist_warnings_by_id or {}).get(pid, [])
+        components = Engine._read_map_components(task_name, map_synth) or Engine._read_map_components(task_name, map_hist)
         return {
             "id": pid,
             "name": raw.get("LABEL") or pid or "(brak LABEL)",
@@ -414,6 +446,7 @@ class Engine:
             "drift_pct": drift_pct,
             "period_on": period_on,
             "period_value": period_value,
+            "components": components,
             "composition": f"MAP_SYNTH={map_synth or '—'}  ·  MAP_HIST={map_hist or '—'}",
             "etfs": "",
         }
@@ -1271,35 +1304,42 @@ class RunTab(ctk.CTkFrame):
 
         self._action_buttons = [self._dryrun_btn, self._refresh_btn, self._validate_btn]
 
-        # -- panel szczegółów zaznaczonego portfela: kwadrat (przyszły wykres
-        # kołowy składu) + krótkie info (rebalans, ścieżki map). Wypełnia
-        # miejsce zwolnione przez zwężenie przycisków po lewej.
-        # Kwadrat powiększony 64→96px (proporcjonalnie ~1.5x) i ramka pogłębiona
-        # w dół (dodatkowy pad_bottom) — żeby nie ukraść miejsca liście portfeli
-        # powyżej, wysokość górnego panelu (self._paned top) zwiększona o
-        # odpowiadającą deltę w tym samym kroku.
+        # -- panel szczegółów zaznaczonego portfela: realny wykres kołowy
+        # składu (tk.Canvas — CTkFrame nie rysuje łuków) + nazwa wyrównana z
+        # górną krawędzią rzędu przycisków (row=0 w toolbarze, ten sam rząd
+        # co btns) + ścieżki map TUŻ pod nazwą + legenda składu (kolorowe
+        # kwadraciki + "Nazwa XX%") wypełniająca resztę wysokości pudełka —
+        # to miejsce wcześniej stało puste pod krótkim opisem rebalansu.
+        PIE_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#A855F7", "#EF4444",
+                      "#14B8A6", "#EAB308", "#6366F1", "#EC4899", "#84CC16"]
+        self._PIE_COLORS = PIE_COLORS
+
         detail = ctk.CTkFrame(toolbar, fg_color=COL_PANEL, border_width=1, border_color=COL_BORDER)
         detail.grid(row=0, column=1, sticky="nsew", padx=(PAD_LOOSE, 0))
         detail.grid_columnconfigure(0, weight=1)
 
         pie_size = _dim(96) + 2 * CONSOLE_LINE_HEIGHT
-        self._pie_placeholder = ctk.CTkFrame(
-            detail, fg_color=COL_BG, border_width=1, border_color=COL_BORDER,
-            width=pie_size, height=pie_size,
+        self._pie_size = pie_size
+        self._pie_canvas = tk.Canvas(
+            detail, width=pie_size, height=pie_size, bg=COL_PANEL,
+            highlightthickness=1, highlightbackground=COL_BORDER, bd=0,
         )
-        self._pie_placeholder.grid(row=0, column=1, rowspan=2, padx=PAD, pady=(PAD, PAD_LOOSE), sticky="n")
-        self._pie_placeholder.grid_propagate(False)  # kwadrat niezależnie od (na razie braku) zawartości
+        self._pie_canvas.grid(row=0, column=1, rowspan=3, padx=PAD, pady=(PAD, PAD_LOOSE), sticky="n")
 
         self._detail_name_lbl = ctk.CTkLabel(
             detail, text="Kliknij portfel na liście powyżej", font=F_LABEL_B,
             text_color=COL_TEXT_DIM, anchor="w",
         )
-        self._detail_name_lbl.grid(row=0, column=0, sticky="w", padx=PAD, pady=(PAD, 0))
+        self._detail_name_lbl.grid(row=0, column=0, sticky="w", padx=PAD, pady=(PAD_TIGHT, 0))
 
-        self._detail_info_lbl = ctk.CTkLabel(
-            detail, text="", font=F_HINT, text_color=COL_TEXT_DIM, anchor="w", justify="left",
+        self._detail_paths_lbl = ctk.CTkLabel(
+            detail, text="", font=F_HINT8, text_color=COL_TEXT_DIM, anchor="w", justify="left",
         )
-        self._detail_info_lbl.grid(row=1, column=0, sticky="nw", padx=PAD, pady=(0, PAD_LOOSE))
+        self._detail_paths_lbl.grid(row=1, column=0, sticky="nw", padx=PAD, pady=(_dim(2), PAD_TIGHT))
+
+        self._detail_legend = ctk.CTkFrame(detail, fg_color="transparent")
+        self._detail_legend.grid(row=2, column=0, sticky="nw", padx=PAD, pady=(0, PAD_LOOSE))
+        self._detail_legend_rows: list[ctk.CTkFrame] = []
 
         self._selected_portfolio: dict | None = None
 
@@ -1390,7 +1430,9 @@ class RunTab(ctk.CTkFrame):
             self._on_portfolio_selected(portfolios[0])  # ten sam wzorzec co auto-select pierwszego taska w sidebarze
         else:
             self._detail_name_lbl.configure(text="Kliknij portfel na liście powyżej", text_color=COL_TEXT_DIM)
-            self._detail_info_lbl.configure(text="")
+            self._detail_paths_lbl.configure(text="")
+            self._clear_legend()
+            self._draw_pie([])
 
     def _on_portfolio_selected(self, portfolio: dict):
         for row in self._portfolio_rows:
@@ -1399,16 +1441,73 @@ class RunTab(ctk.CTkFrame):
         # (focus_set() na CTkFrame nie ma sensu — patrz komentarz w __init__)
 
         self._detail_name_lbl.configure(text=portfolio.get("name", "—"), text_color=COL_TEXT)
-        bits = []
-        if portfolio.get("drift_on"):
-            bits.append(f"DRIFT {portfolio.get('drift_pct', '')}%")
-        if portfolio.get("period_on"):
-            bits.append(f"Autorebalans {portfolio.get('period_value', '')}")
-        rebal_txt = " + ".join(bits) if bits else "Buy & Hold"
-        info = f"{rebal_txt}\n{portfolio.get('composition', '—')}"
-        self._detail_info_lbl.configure(text=info)
-        # Kwadrat zostaje pusty świadomie — wykres kołowy wymaga doczytania
-        # składu z plików MAP_SYNTH/MAP_HIST (TODO, patrz _adapt_portfolio_row).
+        self._detail_paths_lbl.configure(text=portfolio.get("composition", "—"))
+
+        components = portfolio.get("components") or []
+        self._update_legend(components)
+        self._draw_pie(components)
+
+    def _clear_legend(self):
+        for row in self._detail_legend_rows:
+            row.destroy()
+        self._detail_legend_rows.clear()
+
+    def _update_legend(self, components: list[tuple[str, float]]):
+        """Odbudowuje legendę: kolorowy kwadracik + 'Nazwa XX%' per wiersz,
+        kolory 1:1 z wycinkami wykresu (ta sama lista PIE_COLORS, ta sama
+        kolejność). Pusty skład -> jedna wyszarzona linia informacyjna."""
+        self._clear_legend()
+        if not components:
+            row = ctk.CTkFrame(self._detail_legend, fg_color="transparent")
+            row.grid(row=0, column=0, sticky="w")
+            ctk.CTkLabel(
+                row, text="(brak danych o składzie)", font=F_HINT8, text_color=COL_TEXT_DIM, anchor="w",
+            ).pack(side="left")
+            self._detail_legend_rows.append(row)
+            return
+        total = sum(w for _, w in components) or 1
+        for i, (name, weight) in enumerate(components):
+            color = self._PIE_COLORS[i % len(self._PIE_COLORS)]
+            row = ctk.CTkFrame(self._detail_legend, fg_color="transparent")
+            row.grid(row=i, column=0, sticky="w", pady=(0, _dim(1)))
+            swatch = ctk.CTkFrame(row, fg_color=color, width=_dim(8), height=_dim(8))
+            swatch.pack(side="left", padx=(0, PAD_TIGHT))
+            swatch.pack_propagate(False)
+            pct = weight / total * 100
+            ctk.CTkLabel(
+                row, text=f"{name} {pct:.0f}%", font=F_HINT8, text_color=COL_TEXT, anchor="w",
+            ).pack(side="left")
+            self._detail_legend_rows.append(row)
+
+    def _draw_pie(self, components: list[tuple[str, float]]):
+        """Rysuje realny wykres kołowy na tk.Canvas z listy (nazwa, waga).
+        Kąt startowy 90° (góra), idziemy zgodnie z ruchem wskazówek zegara
+        (extent ujemny — konwencja tkinter: dodatni kąt = przeciwnie do
+        ruchu wskazówek). Pusty skład -> sam okrąg konturowy jako placeholder."""
+        c = self._pie_canvas
+        c.delete("all")
+        pad = _dim(2)
+        size = self._pie_size
+        bbox = (pad, pad, size - pad, size - pad)
+        if not components:
+            c.create_oval(*bbox, outline=COL_BORDER, width=1)
+            return
+        total = sum(w for _, w in components) or 1
+        start = 90.0
+        for i, (_name, weight) in enumerate(components):
+            extent = -360.0 * (weight / total)
+            color = self._PIE_COLORS[i % len(self._PIE_COLORS)]
+            if abs(extent) >= 359.9:
+                # Tkinter quirk: create_arc z extent ±360 (jeden składnik =
+                # 100%) jest zdegenerowanym łukiem i NIC nie rysuje — trzeba
+                # narysować zwykłe wypełnione koło zamiast wycinka.
+                c.create_oval(*bbox, fill=color, outline=COL_PANEL, width=1)
+            else:
+                c.create_arc(
+                    *bbox, start=start, extent=extent, fill=color,
+                    outline=COL_PANEL, width=1, style="pieslice",
+                )
+            start += extent
 
     def _set_runs(self, runs: list[dict]):
         for child in self._runs_scroll.winfo_children():
