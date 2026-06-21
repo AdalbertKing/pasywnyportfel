@@ -1199,32 +1199,42 @@ class RunTab(ctk.CTkFrame):
         )
         self._paned.grid(row=0, column=0, sticky="nsew")
 
-        # -- górny panel: scroll (parametry + portfele) + toolbar akcji (pinned) --
+        # -- górny panel: PARAMETRY TASKA (statyczne, NIE scrolluje się) +
+        # PORTFELE W ANALIZIE (osobny scroll, tylko ta lista się przewija) +
+        # toolbar akcji (pinned na dole). Wcześniej oba bloki żyły w jednym
+        # CTkScrollableFrame, więc scroll przesuwał też Parametry Taska razem
+        # z listą — błąd zgłoszony przez usera: scrollbar miał ruszać tylko
+        # listę portfeli, Parametry Taska mają zostać na miejscu.
         top = ctk.CTkFrame(self._paned, fg_color="transparent")
         top.grid_columnconfigure(0, weight=1)
-        top.grid_rowconfigure(0, weight=1)
-        self._paned.add(top, minsize=_dim(180), height=_dim(480))
+        top.grid_rowconfigure(0, weight=0)  # Parametry Taska — stały rozmiar
+        top.grid_rowconfigure(1, weight=1)  # Portfele w analizie — scroll, rozciąga się
+        self._paned.add(top, minsize=_dim(180), height=_dim(520))
+
+        params_static = ctk.CTkFrame(top, fg_color="transparent")
+        params_static.grid(row=0, column=0, sticky="ew", padx=PAD, pady=(PAD, 0))
+        params_static.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            params_static, text="PARAMETRY TASKA", font=F_SECTION, text_color=COL_TEXT_DIM, anchor="w",
+        ).grid(row=0, column=0, sticky="w", pady=(0, PAD_TIGHT))
+        self._params = ParamsGrid(params_static)
+        self._params.grid(row=1, column=0, sticky="ew")
 
         self._scroll = ctk.CTkScrollableFrame(top, fg_color="transparent")
-        self._scroll.grid(row=0, column=0, sticky="nsew", padx=PAD, pady=PAD)
+        self._scroll.grid(row=1, column=0, sticky="nsew", padx=PAD, pady=(PAD_LOOSE, PAD))
         self._scroll.grid_columnconfigure(0, weight=1)
         self._boost_scroll_speed(self._scroll)
 
         ctk.CTkLabel(
-            self._scroll, text="PARAMETRY TASKA", font=F_SECTION, text_color=COL_TEXT_DIM, anchor="w",
-        ).grid(row=0, column=0, sticky="w", pady=(0, PAD_TIGHT))
-        self._params = ParamsGrid(self._scroll)
-        self._params.grid(row=1, column=0, sticky="ew", pady=(0, PAD_LOOSE))
-
-        ctk.CTkLabel(
             self._scroll, text="PORTFELE W ANALIZIE", font=F_SECTION, text_color=COL_TEXT_DIM, anchor="w",
-        ).grid(row=2, column=0, sticky="w", pady=(0, PAD_TIGHT))
+        ).grid(row=0, column=0, sticky="w", pady=(0, PAD_TIGHT))
         self._portfolios_frame = ctk.CTkFrame(self._scroll, fg_color="transparent")
-        self._portfolios_frame.grid(row=3, column=0, sticky="ew")
+        self._portfolios_frame.grid(row=1, column=0, sticky="ew")
         self._portfolios_frame.grid_columnconfigure(0, weight=1)
 
         toolbar = ctk.CTkFrame(top, fg_color="transparent")
-        toolbar.grid(row=1, column=0, sticky="ew", padx=PAD, pady=(0, PAD))
+        toolbar.grid(row=2, column=0, sticky="ew", padx=PAD, pady=(0, PAD))
         toolbar.grid_columnconfigure(0, weight=0)
         toolbar.grid_columnconfigure(1, weight=1)
 
@@ -1264,16 +1274,20 @@ class RunTab(ctk.CTkFrame):
         # -- panel szczegółów zaznaczonego portfela: kwadrat (przyszły wykres
         # kołowy składu) + krótkie info (rebalans, ścieżki map). Wypełnia
         # miejsce zwolnione przez zwężenie przycisków po lewej.
+        # Kwadrat powiększony 64→96px (proporcjonalnie ~1.5x) i ramka pogłębiona
+        # w dół (dodatkowy pad_bottom) — żeby nie ukraść miejsca liście portfeli
+        # powyżej, wysokość górnego panelu (self._paned top) zwiększona o
+        # odpowiadającą deltę w tym samym kroku.
         detail = ctk.CTkFrame(toolbar, fg_color=COL_PANEL, border_width=1, border_color=COL_BORDER)
         detail.grid(row=0, column=1, sticky="nsew", padx=(PAD_LOOSE, 0))
         detail.grid_columnconfigure(1, weight=1)
 
-        pie_size = _dim(64)
+        pie_size = _dim(96)
         self._pie_placeholder = ctk.CTkFrame(
             detail, fg_color=COL_BG, border_width=1, border_color=COL_BORDER,
             width=pie_size, height=pie_size,
         )
-        self._pie_placeholder.grid(row=0, column=0, rowspan=2, padx=PAD, pady=PAD, sticky="n")
+        self._pie_placeholder.grid(row=0, column=0, rowspan=2, padx=PAD, pady=(PAD, PAD_LOOSE), sticky="n")
         self._pie_placeholder.grid_propagate(False)  # kwadrat niezależnie od (na razie braku) zawartości
 
         self._detail_name_lbl = ctk.CTkLabel(
@@ -1285,7 +1299,7 @@ class RunTab(ctk.CTkFrame):
         self._detail_info_lbl = ctk.CTkLabel(
             detail, text="", font=F_HINT, text_color=COL_TEXT_DIM, anchor="w", justify="left",
         )
-        self._detail_info_lbl.grid(row=1, column=1, sticky="nw", padx=(0, PAD), pady=(0, PAD))
+        self._detail_info_lbl.grid(row=1, column=1, sticky="nw", padx=(0, PAD), pady=(0, PAD_LOOSE))
 
         self._selected_portfolio: dict | None = None
 
