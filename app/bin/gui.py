@@ -289,6 +289,17 @@ class Engine:
             settings_path = ROOT / "analysis_definitions" / task_name / "settings.csv"
             portfolios_path = ROOT / "analysis_definitions" / task_name / "portfolios.csv"
             settings = common.read_settings(settings_path)
+            # AUTO/AUTO-3M itd. w start/end (potwierdzone: common.py
+            # resolve_auto_date_token, task_config.py resolve_auto_dates) —
+            # realny, udokumentowany mechanizm dla tasków typu "rolling
+            # window" (np. smoke-test "ostatnie 3 miesiące, do dziś"), NIE
+            # błąd w pliku. Bez rozwiązania tych tokenów GUI pokazywało userowi
+            # gołe "AUTO-3M → AUTO", co wygląda jak zepsute dane. Rozwiązujemy
+            # je tu na konkretne daty (ta sama funkcja co realnie używa
+            # analysis.py), a oryginalne tokeny zostają pod _start_requested/
+            # _end_requested do czytelnej notatki w ParamsGrid gdy się różnią.
+            if hasattr(task_config, "resolve_auto_dates"):
+                settings = task_config.resolve_auto_dates(settings)
             # Potwierdzone: read_portfolios jest w task_config, NIE w common.
             # Realne kolumny (sprawdzone w pliku użytkownika): ID, LABEL,
             # MAP_SYNTH, MAP_HIST, REBALANCE, MAX_DRIFT, INCLUDE.
@@ -993,17 +1004,6 @@ class ParamsGrid(ctk.CTkFrame):
     PORTFEL w portfolios.csv (potwierdzone w analysis.py), nie kluczem w
     settings.csv. Rebalans pokazywany jest teraz przy każdym portfelu
     (PortfolioRow), nie tutaj. To miejsce zajął "Tryb" (analysis_mode).
-    """
-
-class ParamsGrid(ctk.CTkFrame):
-    """Siatka klucz-wartość 'Parametry taska' — GUI_PROJECT_SPEC.md §6. Tylko odczyt
-    (edycja jest w zakładce Konfiguracja, Etap 2).
-
-    UWAGA: pierwsza wersja miała pole "Rebalans" jako parametr taska — to było
-    błędne założenie. W realnym repo REBALANCE/MAX_DRIFT są kolumnami PER
-    PORTFEL w portfolios.csv (potwierdzone w analysis.py), nie kluczem w
-    settings.csv. Rebalans pokazywany jest teraz przy każdym portfelu
-    (PortfolioRow), nie tutaj. To miejsce zajął "Tryb" (analysis_mode).
 
     LAYOUT (poprawka): pierwsza wersja miała 6 pól w jednej kolumnie (6
     wierszy) — zajmowało to za dużo miejsca w pionie kosztem listy portfeli
@@ -1014,10 +1014,29 @@ class ParamsGrid(ctk.CTkFrame):
     """
 
     FIELDS = [
-        ("Okres", "period"), ("Saldo startowe", "saldo"), ("Wyceny", "freq"),
+        ("Okres analizy", "period"), ("Saldo startowe", "saldo"), ("Wyceny", "freq"),
         ("Waluty wykresów", "plot_currencies"), ("Podatek", "tax_label"), ("Tryb", "analysis_mode"),
     ]
     N_COLS = 3
+
+    # "Podatek" — surowe "gross"/"net_PLN 19%" z tax_label() nic nie mówi
+    # userowi spoza projektu (co to "Belka", w jakiej walucie liczone).
+    # Budujemy czytelny opis WPROST z tax_mode/tax_base/tax_rate (dostępne
+    # w settings, niezależnie od pre-zbudowanego tax_label — patrz
+    # Engine._build_tax_label, ta sama logika gross/net tu powielona w
+    # czytelniejszej formie do wyświetlenia).
+    @staticmethod
+    def _format_tax(settings: dict) -> str:
+        mode = str(settings.get("tax_mode", "gross")).strip().lower()
+        if mode in ("", "gross", "none", "off", "0"):
+            return "bez podatku"
+        base = str(settings.get("tax_base", "")).strip().upper() or "?"
+        rate_raw = str(settings.get("tax_rate", "")).strip()
+        try:
+            rate_pct = f"{float(rate_raw) * 100:.0f}%"
+        except ValueError:
+            rate_pct = rate_raw or "?"
+        return f"Belka {rate_pct} ({base})"
 
     # "Tryb" = analysis_mode z settings.csv — wartość surowa (np. "both") nic
     # nie mówi nieobeznanemu userowi, więc tłumaczymy ją na czytelny opis
@@ -1070,6 +1089,31 @@ class ParamsGrid(ctk.CTkFrame):
             row=n_rows, column=0, columnspan=self.N_COLS, sticky="w", pady=(PAD_TIGHT, 0),
         )
 
+    @staticmethod
+    def _format_period(settings: dict) -> str:
+        """Buduje czytelny opis okresu. Gdy start/end w settings.csv to token
+        AUTO/AUTO-3M/itp. (realny, udokumentowany mechanizm "rolling window" —
+        patrz common.resolve_auto_date_token, task_config.resolve_auto_dates),
+        Engine.load_task już je rozwiązał na konkretne daty ISO i zostawił
+        oryginalne tokeny pod _start_requested/_end_requested. Pokazujemy
+        rozwiązane daty + krótką notatkę, zamiast gołego "AUTO-3M → AUTO",
+        które wygląda jak zepsute dane, a w rzeczywistości jest poprawnym
+        oknem kroczącym (np. smoke-test "ostatnie 3 mies., do dziś")."""
+        start = settings.get("start", "—")
+        end = settings.get("end", "—")
+        base = f"{start} → {end}"
+        start_req = str(settings.get("_start_requested", "") or "").strip()
+        end_req = str(settings.get("_end_requested", "") or "").strip()
+        used_auto = start_req.upper().startswith("AUTO") or end_req.upper().startswith("AUTO") or end_req.upper() in ("", "TODAY", "LATEST", "NOW")
+        if not used_auto:
+            return base
+        lookback = settings.get("lookback_months", "")
+        if lookback:
+            note = f"auto: ostatnie {lookback} mies., do dziś"
+        else:
+            note = f"auto (żądano: {start_req or '—'} → {end_req or 'AUTO'})"
+        return f"{base}  ({note})"
+
     def update_values(self, settings: dict, tax_label: str):
         # Klucze potwierdzone wprost w settings.csv użytkownika: start, end,
         # saldo (NIE "capital"), freq (NIE "valuation"), plot_currencies
@@ -1078,12 +1122,16 @@ class ParamsGrid(ctk.CTkFrame):
         freq = settings.get("freq", "—")
         tryb_raw = str(settings.get("analysis_mode", "") or "").strip().lower()
         tryb_display = self.TRYB_OPIS.get(tryb_raw, settings.get("analysis_mode", "—"))
+        # tax_label argument zostaje (wciąż używany gdzie indziej, np. lista
+        # "Ostatnie przebiegi") — tu wyświetlamy czytelniejszą wersję zbudowaną
+        # wprost z tax_mode/tax_base/tax_rate, patrz _format_tax().
+        tax_display = self._format_tax(settings) if settings else (tax_label or "—")
         mapping = {
-            "period": f"{settings.get('start', '—')} → {settings.get('end', '—')}",
+            "period": self._format_period(settings),
             "saldo": settings.get("saldo", "—"),
             "freq": freq,
             "plot_currencies": settings.get("plot_currencies", "—"),
-            "tax_label": tax_label or "—",
+            "tax_label": tax_display,
             "analysis_mode": tryb_display,
         }
         for key, val_label in self._value_labels.items():
