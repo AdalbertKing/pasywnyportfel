@@ -157,7 +157,7 @@ F_HINT = (FONT_FAMILY, _px(7))             # hinty, ścieżki, tagi
 F_HINT8 = (FONT_FAMILY, _px(8))
 F_SIDEBAR_TITLE = (FONT_FAMILY, _px(7), "bold")
 F_SIDEBAR_TASK = (FONT_FAMILY, _px(9))
-F_CONSOLE = (MONO_FAMILY, _px(8))
+F_CONSOLE = (MONO_FAMILY, _px(7))
 F_STATUSBAR = (FONT_FAMILY, _px(7))
 
 COL_BG = "#1e1e1e"
@@ -1034,12 +1034,12 @@ class PortfolioRow(ctk.CTkFrame):
             self, text="", variable=self.include_var, width=_dim(14), height=_dim(14),
             command=self._on_toggle_include,
         )
-        cb_include.grid(row=0, column=0, rowspan=2, padx=PAD, pady=PAD, sticky="n")
+        cb_include.grid(row=0, column=0, padx=PAD, pady=PAD, sticky="w")
 
         self._name_lbl = ctk.CTkLabel(
             self, text=portfolio["name"], font=F_LABEL_B, text_color=text_color, anchor="w",
         )
-        self._name_lbl.grid(row=0, column=1, padx=(0, PAD), pady=(PAD_TIGHT, 0), sticky="w")
+        self._name_lbl.grid(row=0, column=1, padx=(0, PAD), pady=PAD, sticky="w")
 
         # Klik na sam wiersz (tło/nazwę) ustawia focus — NIE na checkboxach
         # ani przycisku "Pobierz brakujące", żeby nie kolidować z ich własnym
@@ -1049,7 +1049,7 @@ class PortfolioRow(ctk.CTkFrame):
         self.configure(cursor="hand2")
 
         badges = ctk.CTkFrame(self, fg_color="transparent")
-        badges.grid(row=0, column=2, padx=PAD, pady=(PAD_TIGHT, 0), sticky="e")
+        badges.grid(row=0, column=2, padx=PAD, pady=PAD, sticky="e")
 
         # Dwa NIEZALEŻNE wskaźniki (Uruchom = tylko podgląd, nieklikalne —
         # state="disabled" zachowuje wizualny stan ✓/☐ bez interakcji).
@@ -1096,15 +1096,15 @@ class PortfolioRow(ctk.CTkFrame):
             width=info_box, height=info_box, state="disabled", **info_cb_kwargs,
         ).pack(side="left")
 
-        detail_text = portfolio.get("composition", "—")
-        ctk.CTkLabel(
-            self, text=detail_text, font=F_HINT, text_color=COL_TEXT_DIM, anchor="w",
-            wraplength=_dim(480), justify="left",
-        ).grid(row=1, column=1, columnspan=2, padx=(0, PAD), pady=(0, PAD_TIGHT), sticky="ew")
+        # Linia ze ścieżkami MAP_SYNTH/MAP_HIST USUNIĘTA — duplikowała
+        # informację już widoczną w panelu szczegółów (kwadrat + info po
+        # kliknięciu portfela), niepotrzebna na samej liście. Pozycja jest
+        # teraz jednowierszowa: checkbox + nazwa + odznaki, wszystko
+        # wycentrowane w pionie w jednym rzędzie.
 
         if portfolio.get("hist_warning"):
             warn = ctk.CTkFrame(self, fg_color="transparent")
-            warn.grid(row=2, column=0, columnspan=3, padx=PAD, pady=(0, PAD_TIGHT), sticky="ew")
+            warn.grid(row=1, column=0, columnspan=3, padx=PAD, pady=(0, PAD_TIGHT), sticky="ew")
             warn_text = portfolio.get("hist_warning_text") or "⚠ brak tickera w HIST_LIBRARY_DAILY.csv"
             if not warn_text.startswith("⚠"):
                 warn_text = f"⚠ {warn_text}"
@@ -1209,7 +1209,7 @@ class RunTab(ctk.CTkFrame):
         top.grid_columnconfigure(0, weight=1)
         top.grid_rowconfigure(0, weight=0)  # Parametry Taska — stały rozmiar
         top.grid_rowconfigure(1, weight=1)  # Portfele w analizie — scroll, rozciąga się
-        self._paned.add(top, minsize=_dim(180), height=_dim(520))
+        self._paned.add(top, minsize=_dim(180), height=_dim(520) + 2 * CONSOLE_LINE_HEIGHT)
 
         params_static = ctk.CTkFrame(top, fg_color="transparent")
         params_static.grid(row=0, column=0, sticky="ew", padx=PAD, pady=(PAD, 0))
@@ -1280,26 +1280,26 @@ class RunTab(ctk.CTkFrame):
         # odpowiadającą deltę w tym samym kroku.
         detail = ctk.CTkFrame(toolbar, fg_color=COL_PANEL, border_width=1, border_color=COL_BORDER)
         detail.grid(row=0, column=1, sticky="nsew", padx=(PAD_LOOSE, 0))
-        detail.grid_columnconfigure(1, weight=1)
+        detail.grid_columnconfigure(0, weight=1)
 
-        pie_size = _dim(96)
+        pie_size = _dim(96) + 2 * CONSOLE_LINE_HEIGHT
         self._pie_placeholder = ctk.CTkFrame(
             detail, fg_color=COL_BG, border_width=1, border_color=COL_BORDER,
             width=pie_size, height=pie_size,
         )
-        self._pie_placeholder.grid(row=0, column=0, rowspan=2, padx=PAD, pady=(PAD, PAD_LOOSE), sticky="n")
+        self._pie_placeholder.grid(row=0, column=1, rowspan=2, padx=PAD, pady=(PAD, PAD_LOOSE), sticky="n")
         self._pie_placeholder.grid_propagate(False)  # kwadrat niezależnie od (na razie braku) zawartości
 
         self._detail_name_lbl = ctk.CTkLabel(
             detail, text="Kliknij portfel na liście powyżej", font=F_LABEL_B,
             text_color=COL_TEXT_DIM, anchor="w",
         )
-        self._detail_name_lbl.grid(row=0, column=1, sticky="w", padx=(0, PAD), pady=(PAD, 0))
+        self._detail_name_lbl.grid(row=0, column=0, sticky="w", padx=PAD, pady=(PAD, 0))
 
         self._detail_info_lbl = ctk.CTkLabel(
             detail, text="", font=F_HINT, text_color=COL_TEXT_DIM, anchor="w", justify="left",
         )
-        self._detail_info_lbl.grid(row=1, column=1, sticky="nw", padx=(0, PAD), pady=(0, PAD_LOOSE))
+        self._detail_info_lbl.grid(row=1, column=0, sticky="nw", padx=PAD, pady=(0, PAD_LOOSE))
 
         self._selected_portfolio: dict | None = None
 
@@ -1535,7 +1535,7 @@ class ConsolePanel(ctk.CTkFrame):
     flag (pomarańczowe) / wartości (zielone), przycisk kopiowania.
     """
 
-    COLLAPSED_LINES = 3
+    COLLAPSED_LINES = 2
     EXPANDED_LINES = 14
 
     def __init__(self, master, **kwargs):
@@ -1564,7 +1564,14 @@ class ConsolePanel(ctk.CTkFrame):
             fg_color="transparent", text_color=COL_TEXT_DIM, border_width=1, border_color=COL_BORDER,
             command=self._copy_to_clipboard,
         )
-        copy_btn.grid(row=0, column=2, sticky="e")
+        copy_btn.grid(row=0, column=2, sticky="e", padx=(0, PAD_TIGHT))
+
+        clear_btn = ctk.CTkButton(
+            header, text="🗑 wyczyść", font=F_HINT8, width=CONSOLE_BTN_WIDTH, height=CONSOLE_BTN_HEIGHT,
+            fg_color="transparent", text_color=COL_TEXT_DIM, border_width=1, border_color=COL_BORDER,
+            command=self._clear_console,
+        )
+        clear_btn.grid(row=0, column=3, sticky="e")
 
         self._textbox = ctk.CTkTextbox(
             self, font=F_CONSOLE, fg_color=COL_CONSOLE_BG, text_color=COL_TEXT,
@@ -1604,16 +1611,26 @@ class ConsolePanel(ctk.CTkFrame):
         lines = self.EXPANDED_LINES if self._expanded else self.COLLAPSED_LINES
         self._textbox.configure(height=self._lines_to_px(lines))
         self._toggle_btn.configure(text="▲ zwiń" if self._expanded else "▼ rozwiń")
+        self._textbox.update_idletasks()
+        self._textbox.see("end" if self._expanded else "1.0")
 
     def _copy_to_clipboard(self):
         content = self._textbox.get("1.0", "end-1c")
         self.clipboard_clear()
         self.clipboard_append(content)
 
+    def _clear_console(self):
+        """Czyści CAŁĄ konsolę (nie tylko widoczny fragment przy zwiniętym
+        panelu) — usuwa zarówno podgląd komendy jak i cały dotychczasowy
+        stdout z przebiegu."""
+        self._textbox.delete("1.0", "end")
+
     def set_placeholder(self):
         self._textbox.delete("1.0", "end")
         self._textbox.insert("end", "$ ", "dim")
         self._textbox.insert("end", "(podgląd komendy pojawi się tutaj po wybraniu taska — Etap 1)", "dim")
+        self._textbox.update_idletasks()
+        self._textbox.see("1.0")
 
     def set_command_preview(self, prefix: str, flags: list[str], values: list[str]):
         """Buduje kolorowaną linię komendy: flagi pomarańczowe, wartości zielone."""
@@ -1623,6 +1640,8 @@ class ConsolePanel(ctk.CTkFrame):
             self._textbox.insert("end", flag + " ", "flag")
             self._textbox.insert("end", value + " ", "value")
         self._textbox.insert("end", "\n")
+        self._textbox.update_idletasks()
+        self._textbox.see("1.0")
 
     def append_stdout_line(self, line: str):
         self._textbox.insert("end", line + "\n")
