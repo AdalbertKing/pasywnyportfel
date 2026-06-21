@@ -25,8 +25,11 @@ Uruchamianie: dwuklik na gui.cmd w katalogu głównym repo.
 
 from __future__ import annotations
 
+import csv
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -423,6 +426,110 @@ class Engine:
             "validation_error": None, "demo": True,
         }
 
+    @staticmethod
+    def _resolve_override_definition(task_name: str, include_overrides: dict[str, bool] | None):
+        """
+        Zwraca (definition_arg, refresh_root, refresh_task_arg, temp_root_to_cleanup).
+
+        Jeśli include_overrides jest None albo identyczny ze stanem zapisanym
+        w portfolios.csv na dysku -> zwraca oryginalne argumenty (bez
+        tworzenia czegokolwiek): definition_arg="analysis_definitions/<task>",
+        refresh_root=ROOT, refresh_task_arg=task_name, temp_root=None.
+
+        Jeśli stan checkboxów w GUI różni się od pliku -> tworzy TYMCZASOWY
+        katalog odwzorowujący DOKŁADNIE realną strukturę:
+            <temp_root>/analysis_definitions/<task_name>/{settings.csv,
+            portfolios.csv (z podmienioną kolumną INCLUDE), maps/}
+        Dzięki temu refresh_quotes.py (woła się jako pozycyjny task_name +
+        --root) dostaje identyczny układ ścieżek co zawsze — zmienia się
+        tylko --root na <temp_root>, więc nie musimy znać/zgadywać jego
+        wewnętrznej logiki łączenia ścieżek.
+        analysis.py natomiast MUSI dostać prawdziwy --root (tam są
+        data/in/libraries, data/in/cpi — nie kopiujemy ich), więc dla niego
+        --definition to ABSOLUTNA ścieżka do <temp_root>/analysis_definitions
+        /<task_name> — bezpieczne niezależnie od tego, czy analysis.py robi
+        ROOT/definition (pathlib: prawa strona absolutna wygrywa cały join)
+        czy używa definition wprost jako ścieżki.
+
+        Wołający MUSI posprzątać temp_root (shutil.rmtree) po runie —
+        runtime-only override, oryginalny portfolios.csv nigdy nietknięty.
+        """
+        orig_dir = ROOT / "analysis_definitions" / task_name
+        orig_portfolios_path = orig_dir / "portfolios.csv"
+        orig_definition_arg = f"analysis_definitions/{task_name}"
+
+        if not include_overrides:
+            return orig_definition_arg, ROOT, task_name, None
+
+        try:
+            with open(orig_portfolios_path, "r", newline="", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames or []
+                rows = list(reader)
+        except Exception:
+            # Nie udało się odczytać pliku — nie ryzykujemy budowy kopii,
+            # spadamy na zwykłą ścieżkę (oryginalny stan na dysku).
+            return orig_definition_arg, ROOT, task_name, None
+
+        file_include = {r.get("ID", ""): truthy_like(r.get("INCLUDE", "1")) for r in rows}
+        if file_include == {k: v for k, v in include_overrides.items() if k in file_include}:
+            # Stan w GUI identyczny z plikiem -> brak potrzeby kopii.
+            return orig_definition_arg, ROOT, task_name, None
+
+        temp_root = Path(tempfile.mkdtemp(prefix=f"pp_run_{task_name}_"))
+        task_copy_dir = temp_root / "analysis_definitions" / task_name
+        task_copy_dir.mkdir(parents=True)
+
+        shutil.copy2(orig_dir / "settings.csv", task_copy_dir / "settings.csv")
+        maps_src = orig_dir / "maps"
+        if maps_src.exists():
+            shutil.copytree(maps_src, task_copy_dir / "maps")
+
+        # WAŻNE (poprawka po realnym teście): pierwsza wersja tylko ustawiała
+        # INCLUDE=0/1 w skopiowanym pliku, zakładając że analysis.py filtruje
+        # po tej kolumnie. Realny test (dry-run, 1 portfel zaznaczony) pokazał
+        # "PORTFOLIOS: 4" mimo override — czyli silnik prawdopodobnie liczy
+        # po prostu WIERSZE w portfolios.csv, niezależnie od INCLUDE (kolumna
+        # może być tylko informacyjna / używana przez validate_task do
+        # raportowania, nie do sterowania wykonaniem analysis.py). Nie mam
+        # źródła analysis.py żeby to potwierdzić, więc nie polegamy na
+        # interpretacji kolumny INCLUDE w ogóle — odznaczone portfele są
+        # FIZYCZNIE USUWANE z kopii, gwarantując wykluczenie niezależnie od
+        # tego, czy silnik honoruje INCLUDE czy nie.
+        kept_rows = [
+            row for row in rows
+            if include_overrides.get(row.get("ID", ""), True)
+        ]
+        with open(task_copy_dir / "portfolios.csv", "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(kept_rows)
+
+        # DRUGA POPRAWKA (po kolejnym realnym teście): usunięcie wierszy z
+        # portfolios.csv NIE WYSTARCZYŁO — log pokazał PORTFOLIOS: 10 i
+        # przetworzenie WSZYSTKICH portfeli mimo kopii z 3 wierszami.
+        # Wniosek: silnik najwyraźniej enumeruje portfele po plikach w
+        # maps/synth/*.csv i maps/hist/*.csv (które kopiujemy w całości
+        # przez copytree), a portfolios.csv służy tylko do LABEL/REBALANCE/
+        # MAX_DRIFT, nie do wyboru które portfele uruchomić. Nie mam źródła
+        # analysis.py żeby to potwierdzić ze 100% pewnością, więc dla
+        # bezpieczeństwa usuwamy z kopii TAKŻE pliki map nieużywane przez
+        # zostawione wiersze — niezależnie od mechanizmu enumeracji w
+        # silniku, brakujący plik mapy nie może zostać przetworzony.
+        kept_map_synth = {row.get("MAP_SYNTH", "").strip() for row in kept_rows if row.get("MAP_SYNTH", "").strip()}
+        kept_map_hist = {row.get("MAP_HIST", "").strip() for row in kept_rows if row.get("MAP_HIST", "").strip()}
+        for sub, kept_set in (("synth", kept_map_synth), ("hist", kept_map_hist)):
+            sub_dir = task_copy_dir / "maps" / sub
+            if not sub_dir.exists():
+                continue
+            for map_file in sub_dir.glob("*.csv"):
+                rel = f"maps\\{sub}\\{map_file.name}"
+                rel_fwd = f"maps/{sub}/{map_file.name}"
+                if rel not in kept_set and rel_fwd not in kept_set and map_file.name not in kept_set:
+                    map_file.unlink()
+
+        return str(task_copy_dir), temp_root, task_name, temp_root
+
     def build_command_preview(self, task_name: str, settings, dry_run: bool = False):
         """
         Zwraca (prefix, flags, values) do kolorowania konsoli — realna komenda
@@ -440,6 +547,21 @@ class Engine:
         prefix = f"python {find_script('analysis.py')}"
         flags = ["--root", "--definition"]
         values = [str(ROOT), f"analysis_definitions/{task_name}"]
+        if dry_run:
+            flags.append("--dry-run")
+            values.append("")
+        return prefix, flags, values
+
+    def build_command_preview_for_definition(self, definition_arg: str, dry_run: bool = False):
+        """Jak build_command_preview, ale dla już ROZWIĄZANEJ ścieżki --definition
+        (wynik _resolve_override_definition wywołanego JEDEN raz przez wołającego —
+        wcześniejsza wersja wywoływała resolve ponownie tutaj, co tworzyło DRUGI,
+        nigdy nieposprzątany folder tymczasowy obok tego z run_pipeline/run_async;
+        ten wyciek widać było w realnym teście jako dwa różne sufiksy temp w
+        jednym przebiegu). Ta wersja nie dotyka dysku."""
+        prefix = f"python {find_script('analysis.py')}"
+        flags = ["--root", "--definition"]
+        values = [str(ROOT), definition_arg]
         if dry_run:
             flags.append("--dry-run")
             values.append("")
@@ -468,25 +590,48 @@ class Engine:
         # folderów wynikowych (poza tym co jest w changelogu/spec).
         return DEMO_RUNS
 
-    def run_async(self, task_name: str, dry_run: bool, on_line, on_done, proc_holder: dict):
+    def run_async(self, task_name: str, dry_run: bool, on_line, on_done, proc_holder: dict, include_overrides: dict[str, bool] | None = None, resolved=None):
         """
         Uruchamia analysis.py w wątku BEZ auto-odświeżania HIST — używane przez
         przycisk Dry-run (ma być szybkim podglądem, nie operacją sieciową).
         Realny przycisk ▶ Uruchom używa run_pipeline() poniżej.
         proc_holder: dict wypełniany kluczem 'proc' po starcie subprocess —
         pozwala wywołującemu (RunTab) przerwać przez proc_holder['proc'].terminate().
+
+        include_overrides: aktualny stan checkboxów INCLUDE z GUI
+        (id_portfela -> bool). Jeśli różni się od portfolios.csv na dysku,
+        run idzie na TYMCZASOWEJ kopii taska (runtime-only override —
+        oryginalny plik nigdy nie jest modyfikowany), sprzątanej po runie.
+
+        resolved: opcjonalnie JUŻ rozwiązana krotka z
+        _resolve_override_definition (żeby uniknąć tworzenia DRUGIEGO
+        folderu tymczasowego, gdy wołający — RunTab — już raz wywołał
+        resolve dla podglądu komendy w konsoli). Jeśli None, rozwiązujemy
+        tutaj sami (np. wywołanie spoza RunTab).
         """
         script_path = find_script("analysis.py")
+        if resolved is not None:
+            definition_arg, _refresh_root, _refresh_task, temp_root = resolved
+        else:
+            definition_arg, _refresh_root, _refresh_task, temp_root = self._resolve_override_definition(task_name, include_overrides)
         argv = [
             sys.executable, str(script_path),
             "--root", str(ROOT),
-            "--definition", f"analysis_definitions/{task_name}",
+            "--definition", definition_arg,
         ]
         if dry_run:
             argv.append("--dry-run")
 
         def worker():
             try:
+                if temp_root is not None:
+                    checked_ids = sorted(pid for pid, inc in (include_overrides or {}).items() if inc)
+                    unchecked_ids = sorted(pid for pid, inc in (include_overrides or {}).items() if not inc)
+                    on_line(
+                        "[DEBUG] kopia portfolios.csv — INCLUDE=1: "
+                        f"{', '.join(checked_ids) or '(brak)'}  |  INCLUDE=0: "
+                        f"{', '.join(unchecked_ids) or '(brak)'}"
+                    )
                 proc = subprocess.Popen(
                     argv, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1,
@@ -499,6 +644,9 @@ class Engine:
             except Exception as exc:  # noqa: BLE001
                 on_line(f"[BŁĄD] Nie udało się uruchomić: {exc}")
                 on_done(False)
+            finally:
+                if temp_root is not None:
+                    shutil.rmtree(temp_root, ignore_errors=True)
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
@@ -518,7 +666,7 @@ class Engine:
         proc.wait()
         return proc.returncode
 
-    def run_pipeline(self, task_name: str, on_line, on_done, proc_holder: dict):
+    def run_pipeline(self, task_name: str, on_line, on_done, proc_holder: dict, include_overrides: dict[str, bool] | None = None, resolved=None):
         """
         Realne zachowanie przycisku ▶ Uruchom — GUI_PROJECT_SPEC.md §6:
         "GUI widzi HIST ⚠ → automatycznie pobiera brakujące → potem uruchamia
@@ -532,24 +680,54 @@ class Engine:
                (docelowo: pytanie "Uruchomić bez HIST?" — na razie wymaga
                ręcznej decyzji użytkownika, patrz TODO niżej)
           3. analysis.py --root <ROOT> --definition analysis_definitions/<task>
+
+        include_overrides: aktualny stan checkboxów INCLUDE z GUI
+        (id_portfela -> bool). BUGFIX: wcześniej ten parametr był całkowicie
+        ignorowany — GUI uruchamiał zawsze pierwotny stan portfolios.csv
+        z dysku, niezależnie od tego co user odznaczył/zaznaczył na liście
+        (zgłoszony błąd funkcjonalny). Teraz: jeśli stan w GUI różni się od
+        pliku, refresh_quotes (krok 1-2, dotyczy pokrycia HIST) ORAZ
+        analysis.py (krok 3) odpalane są na TYMCZASOWEJ kopii taska z
+        podmienioną kolumną INCLUDE — oryginalny portfolios.csv na dysku
+        nigdy nie jest modyfikowany (runtime-only override, decyzja usera:
+        bez zapisu do CSV i bez pytania). Krok HIST też musi iść na kopii,
+        inaczej refresh_quotes sprawdzałby/pobierał tickery dla portfeli
+        odznaczonych przez usera.
         Wszystko w JEDNYM wątku w tle, jeden ciągły strumień do konsoli.
         """
         refresh_script = find_script("refresh_quotes.py")
         analysis_script = find_script("analysis.py")
+        if resolved is not None:
+            definition_arg, refresh_root, refresh_task_arg, temp_root = resolved
+        else:
+            definition_arg, refresh_root, refresh_task_arg, temp_root = self._resolve_override_definition(task_name, include_overrides)
+        using_override = temp_root is not None
 
         def worker():
             try:
-                on_line(f"$ refresh_quotes.py {task_name} --check  (sprawdzam pokrycie HIST, offline)")
+                if using_override:
+                    checked_ids = sorted(pid for pid, inc in include_overrides.items() if inc)
+                    unchecked_ids = sorted(pid for pid, inc in include_overrides.items() if not inc)
+                    on_line("[INFO] Stan zaznaczonych portfeli różni się od zapisanego taska — "
+                             "uruchamiam z bieżącym zaznaczeniem (tylko ten przebieg, plik "
+                             "portfolios.csv pozostaje bez zmian).")
+                    on_line(
+                        "[DEBUG] kopia portfolios.csv — INCLUDE=1: "
+                        f"{', '.join(checked_ids) or '(brak)'}  |  INCLUDE=0: "
+                        f"{', '.join(unchecked_ids) or '(brak)'}"
+                    )
+
+                on_line(f"$ refresh_quotes.py {refresh_task_arg} --check  (sprawdzam pokrycie HIST, offline)")
                 check_argv = [
-                    sys.executable, str(refresh_script), task_name,
-                    "--root", str(ROOT), "--check",
+                    sys.executable, str(refresh_script), refresh_task_arg,
+                    "--root", str(refresh_root), "--check",
                 ]
                 check_rc = self._stream_subprocess(check_argv, on_line, proc_holder)
 
                 if check_rc != 0:
-                    on_line(f"[INFO] Brakuje danych HIST — pobieram (refresh_quotes.py {task_name})...")
+                    on_line(f"[INFO] Brakuje danych HIST — pobieram (refresh_quotes.py {refresh_task_arg})...")
                     refresh_argv = [
-                        sys.executable, str(refresh_script), task_name, "--root", str(ROOT),
+                        sys.executable, str(refresh_script), refresh_task_arg, "--root", str(refresh_root),
                     ]
                     refresh_rc = self._stream_subprocess(refresh_argv, on_line, proc_holder)
                     if refresh_rc != 0:
@@ -570,7 +748,7 @@ class Engine:
                 argv = [
                     sys.executable, str(analysis_script),
                     "--root", str(ROOT),
-                    "--definition", f"analysis_definitions/{task_name}",
+                    "--definition", definition_arg,
                 ]
                 on_line("$ " + " ".join(argv))
                 rc = self._stream_subprocess(argv, on_line, proc_holder)
@@ -578,6 +756,9 @@ class Engine:
             except Exception as exc:  # noqa: BLE001
                 on_line(f"[BŁĄD] {exc}")
                 on_done(False)
+            finally:
+                if temp_root is not None:
+                    shutil.rmtree(temp_root, ignore_errors=True)
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
@@ -730,24 +911,64 @@ class ParamsGrid(ctk.CTkFrame):
     (PortfolioRow), nie tutaj. To miejsce zajął "Tryb" (analysis_mode).
     """
 
-    ROWS = [
-        ("Okres", "period"),
-        ("Saldo startowe", "saldo"),
-        ("Wyceny", "freq"),
-        ("Waluty wykresów", "plot_currencies"),
-        ("Podatek", "tax_label"),
-        ("Tryb", "analysis_mode"),
+class ParamsGrid(ctk.CTkFrame):
+    """Siatka klucz-wartość 'Parametry taska' — GUI_PROJECT_SPEC.md §6. Tylko odczyt
+    (edycja jest w zakładce Konfiguracja, Etap 2).
+
+    UWAGA: pierwsza wersja miała pole "Rebalans" jako parametr taska — to było
+    błędne założenie. W realnym repo REBALANCE/MAX_DRIFT są kolumnami PER
+    PORTFEL w portfolios.csv (potwierdzone w analysis.py), nie kluczem w
+    settings.csv. Rebalans pokazywany jest teraz przy każdym portfelu
+    (PortfolioRow), nie tutaj. To miejsce zajął "Tryb" (analysis_mode).
+
+    LAYOUT (poprawka): pierwsza wersja miała 6 pól w jednej kolumnie (6
+    wierszy) — zajmowało to za dużo miejsca w pionie kosztem listy portfeli
+    poniżej, która przez to mieściła tylko 1 pozycję na ekranie. Teraz 6 pól
+    w siatce 3 kolumny × 2 wiersze, każde pole jako "Etykieta: wartość" w
+    jednej linii zamiast etykiety nad wartością — odzyskuje ~4 wiersze
+    wysokości dla listy portfeli.
+    """
+
+    FIELDS = [
+        ("Okres", "period"), ("Saldo startowe", "saldo"), ("Wyceny", "freq"),
+        ("Waluty wykresów", "plot_currencies"), ("Podatek", "tax_label"), ("Tryb", "analysis_mode"),
     ]
+    N_COLS = 3
+
+    # "Tryb" = analysis_mode z settings.csv — wartość surowa (np. "both") nic
+    # nie mówi nieobeznanemu userowi, więc tłumaczymy ją na czytelny opis
+    # zamiast zostawiać gołe słowo z silnika. Potwierdzone wartości w
+    # task_config.is_synth_only()/is_hist_only(): synth/synthetic/synth_only,
+    # hist/hist_only/historical/etf/etf_only; wszystko inne (w tym "both")
+    # traktujemy jako tryb równoległy SYNTH+HIST.
+    TRYB_OPIS = {
+        "both": "SYNTH + HIST równolegle",
+        "synth": "tylko SYNTH (dane syntetyczne)",
+        "synthetic": "tylko SYNTH (dane syntetyczne)",
+        "synth_only": "tylko SYNTH (dane syntetyczne)",
+        "synthetic_only": "tylko SYNTH (dane syntetyczne)",
+        "hist": "tylko HIST (realne ETF)",
+        "hist_only": "tylko HIST (realne ETF)",
+        "historical": "tylko HIST (realne ETF)",
+        "historical_only": "tylko HIST (realne ETF)",
+        "etf": "tylko HIST (realne ETF)",
+        "etf_only": "tylko HIST (realne ETF)",
+    }
 
     def __init__(self, master, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
-        self.grid_columnconfigure(1, weight=1)
+        for c in range(self.N_COLS):
+            self.grid_columnconfigure(c, weight=1)
         self._value_labels: dict[str, ctk.CTkLabel] = {}
-        for i, (label_text, key) in enumerate(self.ROWS):
-            lbl = ctk.CTkLabel(self, text=label_text, font=F_HINT8, text_color=COL_TEXT_DIM, anchor="w")
-            lbl.grid(row=i, column=0, padx=(0, PAD_LOOSE), pady=PAD_TIGHT, sticky="w")
-            val = ctk.CTkLabel(self, text="—", font=F_LABEL, text_color=COL_TEXT, anchor="w")
-            val.grid(row=i, column=1, pady=PAD_TIGHT, sticky="w")
+        for i, (label_text, key) in enumerate(self.FIELDS):
+            row, col = divmod(i, self.N_COLS)
+            cell = ctk.CTkFrame(self, fg_color="transparent")
+            cell.grid(row=row, column=col, padx=(0, PAD_LOOSE), pady=PAD_TIGHT, sticky="w")
+            ctk.CTkLabel(
+                cell, text=f"{label_text}:", font=F_HINT8, text_color=COL_TEXT_DIM, anchor="w",
+            ).pack(side="left")
+            val = ctk.CTkLabel(cell, text="—", font=F_LABEL, text_color=COL_TEXT, anchor="w")
+            val.pack(side="left", padx=(_dim(4), 0))
             self._value_labels[key] = val
 
         # Podpowiedź łącząca Wyceny z czułością DRIFT — bez tego te dwie
@@ -756,12 +977,13 @@ class ParamsGrid(ctk.CTkFrame):
         # is_drift_breached() jest liczone WYŁĄCZNIE na datach zresamplowanych
         # do Wycen — przy monthly portfel może przejechać próg MAX_DRIFT
         # nawet o miesiąc zanim ledger to zauważy i skoryguje.
+        n_rows = -(-len(self.FIELDS) // self.N_COLS)  # ceil
         self._freq_hint = ctk.CTkLabel(
             self, text="", font=F_HINT, text_color=COL_FLAG, anchor="w", justify="left",
-            wraplength=_dim(520),
+            wraplength=_dim(900),
         )
         self._freq_hint.grid(
-            row=len(self.ROWS), column=0, columnspan=2, sticky="w", pady=(PAD_TIGHT, 0),
+            row=n_rows, column=0, columnspan=self.N_COLS, sticky="w", pady=(PAD_TIGHT, 0),
         )
 
     def update_values(self, settings: dict, tax_label: str):
@@ -770,13 +992,15 @@ class ParamsGrid(ctk.CTkFrame):
         # (NIE "currencies"), analysis_mode. "capital"/"valuation"/"currencies"
         # z pierwszej wersji nie istniały w realnym pliku — zawsze dawały "—".
         freq = settings.get("freq", "—")
+        tryb_raw = str(settings.get("analysis_mode", "") or "").strip().lower()
+        tryb_display = self.TRYB_OPIS.get(tryb_raw, settings.get("analysis_mode", "—"))
         mapping = {
             "period": f"{settings.get('start', '—')} → {settings.get('end', '—')}",
             "saldo": settings.get("saldo", "—"),
             "freq": freq,
             "plot_currencies": settings.get("plot_currencies", "—"),
             "tax_label": tax_label or "—",
-            "analysis_mode": settings.get("analysis_mode", "—"),
+            "analysis_mode": tryb_display,
         }
         for key, val_label in self._value_labels.items():
             val_label.configure(text=str(mapping.get(key, "—")))
@@ -833,13 +1057,21 @@ class PortfolioRow(ctk.CTkFrame):
         # pustych checkboxów już to komunikuje.
         # Cały rząd jest informacyjny (podgląd, nie edycja) — mniejsze niż
         # INCLUDE (które jest faktycznie klikalne) i z ciaśniejszym odstępem.
+        # Kolor: ten sam szary zaznaczone/niezaznaczone — domyślny CTkCheckBox
+        # robi zaznaczone niebieskim, co wygląda jak realny, klikalny
+        # przełącznik (myli się z INCLUDE). Tu stan komunikuje WYŁĄCZNIE
+        # obecność/brak haczyka, nie kolor.
         info_box = _dim(10)
+        info_cb_kwargs = dict(
+            fg_color=COL_TEXT_DIM, border_color=COL_TEXT_DIM,
+            hover=False, checkmark_color=COL_BG,
+        )
         drift_on = bool(portfolio.get("drift_on"))
         drift_pct = portfolio.get("drift_pct", "")
         drift_txt = f"DRIFT {drift_pct}%" if drift_on and drift_pct else "DRIFT"
         cb_drift = ctk.CTkCheckBox(
             badges, text=drift_txt, font=F_HINT, width=info_box, height=info_box,
-            variable=tk.BooleanVar(value=drift_on), state="disabled",
+            variable=tk.BooleanVar(value=drift_on), state="disabled", **info_cb_kwargs,
         )
         cb_drift.pack(side="left", padx=(0, PAD_TIGHT))
 
@@ -848,20 +1080,20 @@ class PortfolioRow(ctk.CTkFrame):
         period_txt = f"Autorebalans {period_value}" if period_on and period_value else "Autorebalans"
         cb_period = ctk.CTkCheckBox(
             badges, text=period_txt, font=F_HINT, width=info_box, height=info_box,
-            variable=tk.BooleanVar(value=period_on), state="disabled",
+            variable=tk.BooleanVar(value=period_on), state="disabled", **info_cb_kwargs,
         )
         cb_period.pack(side="left", padx=(0, PAD_TIGHT))
 
         self.synth_var = tk.BooleanVar(value=bool(portfolio.get("synth")))
         ctk.CTkCheckBox(
             badges, text="SYNTH", variable=self.synth_var, font=F_HINT,
-            width=info_box, height=info_box, state="disabled",
+            width=info_box, height=info_box, state="disabled", **info_cb_kwargs,
         ).pack(side="left", padx=(0, PAD_TIGHT))
 
         self.hist_var = tk.BooleanVar(value=bool(portfolio.get("hist")))
         ctk.CTkCheckBox(
             badges, text="HIST", variable=self.hist_var, font=F_HINT,
-            width=info_box, height=info_box, state="disabled",
+            width=info_box, height=info_box, state="disabled", **info_cb_kwargs,
         ).pack(side="left")
 
         detail_text = portfolio.get("composition", "—")
@@ -887,7 +1119,13 @@ class PortfolioRow(ctk.CTkFrame):
     def _on_toggle_include(self):
         included = self.include_var.get()
         self._name_lbl.configure(text_color=COL_TEXT if included else COL_TEXT_DIM)
-        print(f"[TODO Etap 2] zapis include={included} do portfolios.csv (na razie tylko w pamięci)")
+        # Świadomie TYLKO w pamięci — to jest runtime-only override (decyzja
+        # usera): stan checkboxów jest odczytywany dopiero w RunTab przy
+        # kliknięciu ▶ Uruchom/Dry-run i przekazany jako include_overrides
+        # do Engine.run_pipeline()/run_async(), które budują tymczasową
+        # kopię portfolios.csv jeśli stan różni się od pliku na dysku.
+        # Trwały zapis do portfolios.csv to osobna funkcja — zakładka
+        # Konfiguracja (Etap 2), nie ten ekran.
 
     @staticmethod
     def _stub_fetch_hist():
@@ -965,11 +1203,12 @@ class RunTab(ctk.CTkFrame):
         top = ctk.CTkFrame(self._paned, fg_color="transparent")
         top.grid_columnconfigure(0, weight=1)
         top.grid_rowconfigure(0, weight=1)
-        self._paned.add(top, minsize=_dim(180), height=_dim(420))
+        self._paned.add(top, minsize=_dim(180), height=_dim(480))
 
         self._scroll = ctk.CTkScrollableFrame(top, fg_color="transparent")
         self._scroll.grid(row=0, column=0, sticky="nsew", padx=PAD, pady=PAD)
         self._scroll.grid_columnconfigure(0, weight=1)
+        self._boost_scroll_speed(self._scroll)
 
         ctk.CTkLabel(
             self._scroll, text="PARAMETRY TASKA", font=F_SECTION, text_color=COL_TEXT_DIM, anchor="w",
@@ -1050,6 +1289,11 @@ class RunTab(ctk.CTkFrame):
 
         self._selected_portfolio: dict | None = None
 
+        # Strzałki Góra/Dół: bindowane na głównym oknie (PasywnyPortfelGUI),
+        # nie tutaj — CTkFrame NIE wspiera takefocus (potwierdzone: cget()
+        # rzuca ValueError), więc self.focus_set()/self.bind() na RunTab
+        # nigdy realnie nie łapał klawiatury. Patrz PasywnyPortfelGUI.__init__.
+
         # -- dolny panel: ostatnie przebiegi --------------------------------------
         bottom = ctk.CTkFrame(self._paned, fg_color="transparent")
         bottom.grid_columnconfigure(0, weight=1)
@@ -1060,6 +1304,7 @@ class RunTab(ctk.CTkFrame):
             bottom, text="OSTATNIE PRZEBIEGI", font=F_SECTION, text_color=COL_TEXT_DIM, anchor="w",
         ).grid(row=0, column=0, sticky="w", padx=PAD, pady=(PAD, PAD_TIGHT))
         self._runs_scroll = ctk.CTkScrollableFrame(bottom, fg_color="transparent")
+        self._boost_scroll_speed(self._runs_scroll)
         self._runs_scroll.grid(row=1, column=0, sticky="nsew", padx=PAD, pady=(0, PAD))
         self._runs_scroll.grid_columnconfigure(0, weight=1)
 
@@ -1068,7 +1313,47 @@ class RunTab(ctk.CTkFrame):
         self._proc_holder: dict = {}
         self._portfolio_rows: list[PortfolioRow] = []
 
-    # -- API wywoływane z PasywnyPortfelGUI po wyborze taska w sidebarze --------
+    # -- pomocnicze: scroll i nawigacja klawiaturą --------------------------
+    @staticmethod
+    def _boost_scroll_speed(scroll_frame: ctk.CTkScrollableFrame):
+        """
+        CTkScrollableFrame na Windows ma domyślnie yscrollincrement=1px,
+        a kółko myszy przesuwa o -int(delta/6) jednostek (delta=120 na
+        'klik' kółkiem -> 20px). To bardzo mało, stąd wrażenie 'słabo
+        reaguje'. Zwiększamy krok jednostki, żeby to samo przesunięcie
+        kółkiem dawało realnie odczuwalny scroll. Używa prywatnego
+        atrybutu _parent_canvas (jedyny dostęp do tego ustawienia bez
+        forkowania całej klasy) — jeśli kiedyś customtkinter to zmieni,
+        ta linia po prostu nic nie zrobi (nie wywali się).
+        """
+        try:
+            scroll_frame._parent_canvas.configure(yscrollincrement=_dim(18))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _select_relative(self, delta: int):
+        if not self._portfolio_rows:
+            return
+        portfolios = [row.portfolio for row in self._portfolio_rows]
+        try:
+            idx = portfolios.index(self._selected_portfolio)
+        except ValueError:
+            idx = 0
+        idx = max(0, min(len(portfolios) - 1, idx + delta))
+        self._on_portfolio_selected(portfolios[idx])
+        # Przewiń zaznaczony wiersz w widoczny obszar.
+        try:
+            row = self._portfolio_rows[idx]
+            self._scroll._parent_canvas.update_idletasks()
+            bbox = self._scroll._parent_canvas.bbox("all")
+            if bbox:
+                row_y = row.winfo_y()
+                canvas_h = self._scroll._parent_canvas.winfo_height()
+                total_h = max(bbox[3], 1)
+                frac = max(0.0, min(1.0, (row_y - canvas_h / 3) / total_h))
+                self._scroll._parent_canvas.yview_moveto(frac)
+        except Exception:  # noqa: BLE001
+            pass
     def load_task(self, task_name: str, data: dict):
         self._current_task_name = task_name
         self._params.update_values(data.get("settings") or {}, data.get("tax_label", "—"))
@@ -1097,6 +1382,7 @@ class RunTab(ctk.CTkFrame):
         for row in self._portfolio_rows:
             row.set_active(row.portfolio is portfolio)
         self._selected_portfolio = portfolio
+        # (focus_set() na CTkFrame nie ma sensu — patrz komentarz w __init__)
 
         self._detail_name_lbl.configure(text=portfolio.get("name", "—"), text_color=COL_TEXT)
         bits = []
@@ -1170,8 +1456,22 @@ class RunTab(ctk.CTkFrame):
         if not self.gui.console._expanded:
             self.gui.console._toggle()
 
-        prefix, flags, values = self.gui.engine.build_command_preview(
-            self._current_task_name, None, dry_run=dry_run,
+        include_overrides = {
+            row.portfolio.get("id", ""): row.include_var.get()
+            for row in self._portfolio_rows
+            if row.portfolio.get("id")
+        }
+
+        # Rozwiązujemy TYLKO RAZ — wcześniejsza wersja wołała to osobno dla
+        # podglądu komendy i osobno w run_async/run_pipeline, co przy
+        # override tworzyło DWA różne foldery tymczasowe (jeden zostawał
+        # nieposprzątany — wyciek, widoczny w realnym teście jako dwa różne
+        # sufiksy temp w jednym przebiegu).
+        resolved = self.gui.engine._resolve_override_definition(self._current_task_name, include_overrides)
+        definition_arg = resolved[0]
+
+        prefix, flags, values = self.gui.engine.build_command_preview_for_definition(
+            definition_arg, dry_run=dry_run,
         )
         self.gui.console.set_command_preview(prefix, flags, values)
 
@@ -1186,12 +1486,14 @@ class RunTab(ctk.CTkFrame):
             # sieciowa nie pasuje do "szybkiego podglądu komendy").
             self.gui.engine.run_async(
                 self._current_task_name, dry_run, on_line, on_done, self._proc_holder,
+                include_overrides=include_overrides, resolved=resolved,
             )
         else:
             # ▶ Uruchom: pełny pipeline — sprawdź HIST, dociągnij brakujące,
             # potem dopiero analiza. Zgodnie z GUI_PROJECT_SPEC.md §6.
             self.gui.engine.run_pipeline(
                 self._current_task_name, on_line, on_done, self._proc_holder,
+                include_overrides=include_overrides, resolved=resolved,
             )
 
     def _on_run_finished(self, success: bool):
@@ -1408,6 +1710,15 @@ class PasywnyPortfelGUI(ctk.CTk):
         # więc pilnujemy górnej granicy ręcznie przy każdym przeciągnięciu.
         self.paned.bind("<B1-Motion>", self._clamp_sidebar_width)
 
+        # Strzałki Góra/Dół -> nawigacja po liście portfeli w Uruchom.
+        # Bindowane na GŁÓWNYM OKNIE (bind_all, jak CTkScrollableFrame robi
+        # to dla scrolla) — CTkFrame (RunTab) nie wspiera takefocus, więc
+        # bindowanie bezpośrednio na nim nigdy realnie nie łapało klawiatury.
+        # Ograniczone do zakładki Uruchom, żeby nie kolidować z przyszłymi
+        # polami tekstowymi w innych zakładkach.
+        self.bind_all("<Down>", self._on_arrow_key)
+        self.bind_all("<Up>", self._on_arrow_key)
+
         # -- row 1: console panel ---------------------------------------------
         self.console.grid(row=1, column=0, sticky="ew")
 
@@ -1440,6 +1751,13 @@ class PasywnyPortfelGUI(ctk.CTk):
             return
         if x > SIDEBAR_MAX_WIDTH:
             self.paned.sash_place(0, SIDEBAR_MAX_WIDTH, 0)
+
+    def _on_arrow_key(self, event):
+        if self.tabview.get() != "Uruchom" or not self.run_tab:
+            return None
+        delta = 1 if event.keysym == "Down" else -1
+        self.run_tab._select_relative(delta)
+        return "break"  # nie propaguj dalej (np. do scrolla konsoli)
 
     def _on_task_selected(self, task: dict):
         self._current_task = task
