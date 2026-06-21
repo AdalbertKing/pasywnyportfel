@@ -699,6 +699,31 @@ class Engine:
         proc.wait()
         return proc.returncode
 
+    def run_refresh_common(self, on_line, on_done, proc_holder: dict):
+        """
+        '⟳ Odśwież dane CPI/FX' w sidebarze — realny entry point potwierdzony
+        w repo (refresh_data.cmd): bootstrap.py --root <ROOT> --refresh-common.
+        Jeden skrypt robi wszystkie trzy źródła naraz (CPI_USD z FRED,
+        CPI_PLN_GUS z GUS, DB_FX z NBP), nadpisując pliki nawet jeśli już
+        istnieją (stąd --refresh-common, nie --generate-missing, które
+        tylko dogenerowuje brakujące). Wymaga internetu.
+        """
+        script_path = find_script("bootstrap.py")
+        argv = [sys.executable, str(script_path), "--root", str(ROOT), "--refresh-common"]
+
+        def worker():
+            try:
+                on_line("$ " + " ".join(argv))
+                rc = self._stream_subprocess(argv, on_line, proc_holder)
+                on_done(rc == 0)
+            except Exception as exc:  # noqa: BLE001
+                on_line(f"[BŁĄD] {exc}")
+                on_done(False)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        return thread
+
     def run_pipeline(self, task_name: str, on_line, on_done, proc_holder: dict, include_overrides: dict[str, bool] | None = None, resolved=None):
         """
         Realne zachowanie przycisku ▶ Uruchom — GUI_PROJECT_SPEC.md §6:
@@ -853,10 +878,13 @@ class TaskRow(ctk.CTkFrame):
 class Sidebar(ctk.CTkFrame):
     """Lista tasków + akcje globalne. Wspólny dla wszystkich zakładek."""
 
-    def __init__(self, master, on_task_selected, tasks: list[dict], **kwargs):
+    def __init__(self, master, on_task_selected, tasks: list[dict], gui=None, **kwargs):
         super().__init__(master, fg_color=COL_SIDEBAR, corner_radius=0, **kwargs)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
+
+        self.gui = gui
+        self._proc_holder: dict = {}
 
         self._on_task_selected = on_task_selected
         self._rows: list[TaskRow] = []
@@ -880,12 +908,12 @@ class Sidebar(ctk.CTkFrame):
         )
         btn_new.grid(row=3, column=0, padx=PAD, pady=(PAD_TIGHT, PAD_TIGHT), sticky="ew")
 
-        btn_refresh = ctk.CTkButton(
+        self._btn_refresh = ctk.CTkButton(
             self, text="⟳ Odśwież dane CPI/FX", font=F_HINT8, height=BTN_HEIGHT,
             fg_color="transparent", border_width=1, border_color=COL_BORDER,
-            command=self._stub_refresh_data,
+            command=self._on_refresh_data_clicked,
         )
-        btn_refresh.grid(row=4, column=0, padx=PAD, pady=(0, PAD), sticky="ew")
+        self._btn_refresh.grid(row=4, column=0, padx=PAD, pady=(0, PAD), sticky="ew")
 
     def set_tasks(self, tasks: list[dict]):
         for row in self._rows:
@@ -907,8 +935,31 @@ class Sidebar(ctk.CTkFrame):
     def _stub_new_task(self):
         print("[TODO] Dialog 'Nowy task' (GUI_PROJECT_SPEC.md §12)")
 
-    def _stub_refresh_data(self):
-        print("[TODO] refresh_data.cmd w wątku")
+    def _on_refresh_data_clicked(self):
+        if not self.gui:
+            print("[BŁĄD] Sidebar bez referencji do gui — nie mogę uruchomić odświeżenia.")
+            return
+        if self._proc_holder.get("proc") is not None and self._proc_holder["proc"].poll() is None:
+            return  # już trwa, ignorujemy podwójny klik
+
+        self._btn_refresh.configure(state="disabled", text="⟳ Odświeżanie…")
+        self.gui.console.append_stdout_line(
+            "[INFO] Odświeżam wspólne dane CPI_USD / CPI_PLN_GUS / DB_FX (wymaga internetu)…"
+        )
+
+        def on_line(line: str):
+            self.after(0, self.gui.console.append_stdout_line, line)
+
+        def on_done(success: bool):
+            self.after(0, self._on_refresh_data_finished, success)
+
+        self._proc_holder = {}
+        self.gui.engine.run_refresh_common(on_line, on_done, self._proc_holder)
+
+    def _on_refresh_data_finished(self, success: bool):
+        self._btn_refresh.configure(state="normal", text="⟳ Odśwież dane CPI/FX")
+        msg = "[OK] Dane CPI/FX odświeżone." if success else "[BŁĄD] Odświeżanie danych CPI/FX nie powiodło się."
+        self.gui.console.append_stdout_line(msg)
 
 
 class PlaceholderTab(ctk.CTkFrame):
@@ -1812,7 +1863,7 @@ class PasywnyPortfelGUI(ctk.CTk):
         self.paned.grid(row=0, column=0, sticky="nsew")
 
         tasks = self.engine.list_tasks()
-        self.sidebar = Sidebar(self.paned, on_task_selected=self._on_task_selected, tasks=tasks)
+        self.sidebar = Sidebar(self.paned, on_task_selected=self._on_task_selected, tasks=tasks, gui=self)
         self.paned.add(self.sidebar, width=SIDEBAR_WIDTH, minsize=SIDEBAR_MIN_WIDTH)
 
         tab_holder = ctk.CTkFrame(self.paned, fg_color=COL_BG, corner_radius=0)
